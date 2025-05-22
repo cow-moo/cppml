@@ -82,6 +82,12 @@ public:
     int start, length, step;
 };
 
+// struct Shape {
+//     std::vector<size_t> data;
+
+//     size_t operator[](int i) { return data[i]; }
+// };
+
 template <typename U = float>
 class TensorProxy;
 
@@ -93,18 +99,15 @@ public:
 
     friend class TensorProxy<U>;
     
-    Tensor(std::initializer_list<U> values) : Tensor(std::vector<U>(values)) {}
-    Tensor(std::initializer_list<Tensor<U>> slices) : Tensor(std::vector<Tensor<U>>(slices)) {}
-
     // Constructor for 1D tensor
-    Tensor(std::vector<U>&& values) : data(std::make_shared<std::vector<U>>()) {
-        data->assign(values.begin(), values.end());
+    Tensor(const std::initializer_list<U>& values) : data(new U[values.size()]) {
+        memcpy(data.get(), values.begin(), values.size() * sizeof(U));
         shape = {values.size()};
         axisIndices = {Range(0, values.size(), 1)};
     }
 
     // Recursive constructor for arbitrary-dimensional tensors
-    Tensor(std::vector<Tensor<U>>&& slices) : data(std::make_shared<std::vector<U>>()) {
+    Tensor(const std::initializer_list<Tensor<U>>& slices) {
         if (slices.size() == 0) {
             throw std::invalid_argument("Tensor cannot be empty");
         }
@@ -113,19 +116,23 @@ public:
         shape = slices.begin()->shape;
         axisIndices = slices.begin()->axisIndices;
 
+        size_t subSize = axisIndices.front().step * axisIndices.front().length;
+
+        data = std::shared_ptr<U[]>(new U[slices.size() * subSize]);
+
+        U* p = data.get();
         // Check consistency of shapes across slices
-        for (const auto& slice : slices) {
+        for (const Tensor<U>& slice : slices) {
             if (slice.shape != shape) {
                 throw std::invalid_argument("All slices must have the same shape");
             }
-            data->insert(data->end(), slice.data->begin(), slice.data->end());
+            memcpy(p, slice.data.get(), subSize * sizeof(U));
+            p += subSize;
         }
 
         shape.insert(shape.begin(), slices.size());
-        axisIndices.insert(axisIndices.begin(), Range(0, slices.size(), axisIndices.front().step * axisIndices.front().length));
+        axisIndices.insert(axisIndices.begin(), Range(0, slices.size(), subSize));
     }
-
-    //Tensor(U value) : data(std::make_shared<std::vector<U>>({value})) {}
 
     static Tensor zeros(const std::vector<size_t>& shape) {
         Tensor res;
@@ -136,7 +143,8 @@ public:
             totalSize *= shape[i];
         }
         reverse(res.axisIndices.begin(), res.axisIndices.end());
-        res.data = std::make_shared<std::vector<U>>(std::vector<U>(totalSize, 0));
+        res.data = std::shared_ptr<U[]>(new U[totalSize]);
+        std::fill(res.data.get(), res.data.get() + totalSize, 0);
         return res;
     }
 
@@ -149,34 +157,21 @@ public:
             totalSize *= shape[i];
         }
         reverse(res.axisIndices.begin(), res.axisIndices.end());
-        res.data = std::make_shared<std::vector<U>>(std::vector<U>(totalSize, 0));
+        res.data = std::shared_ptr<U[]>(new U[totalSize]);
 
         std::mt19937 generator(seed ? *seed : std::random_device{}());
         std::normal_distribution<U> distribution(mean, std);
-        for (auto& x : *res.data) {
-            x = distribution(generator);
+        for (size_t i = 0; i < totalSize; i++) {
+            res.data[i] = distribution(generator);
         }
         return res;
     }
 
     // Performs a deep copy that discards data not seen/accessed by the view
-    // Maybe try to remove recursion? incurs extra factor of #axes data copying
-    // Switch to using apply unary?
     Tensor copy() const {
-        if (shape.size() == 1) {
-            std::vector<U> sliceCopies;
-            for (size_t i = 0; i < shape[0]; i++) {
-                sliceCopies.push_back((*this)[i]);
-            }
-            return Tensor(std::move(sliceCopies));
-        }
-        else {
-            std::vector<Tensor> sliceCopies;
-            for (size_t i = 0; i < shape[0]; i++) {
-                sliceCopies.push_back((*this)[i].copy());
-            }
-            return Tensor(std::move(sliceCopies));
-        }
+        Tensor res = zeros(shape);
+        res += *this;
+        return res;
     }
 
     // Variadic template access operator
@@ -455,7 +450,7 @@ public:
         if (shape.size() > 0) {
             throw std::invalid_argument("Can't cast tensor to scalar.");
         }
-        return (*data)[indexOffset];
+        return data[indexOffset];
     }
 
     // Define << for printing using recursion
@@ -507,7 +502,7 @@ public:
     }
 
 protected:
-    std::shared_ptr<std::vector<U>> data;
+    std::shared_ptr<U[]> data;
     std::vector<Range> axisIndices;
     size_t indexOffset = 0;
 
@@ -518,7 +513,7 @@ protected:
     template <typename Func>
     void apply_binary_helper(const Tensor& a, const Tensor& b, Func op, int index, int aIndex, int bIndex, int axis) {
         if (axis == (int)shape.size()) {
-            (*data)[index] = op((*a.data)[aIndex], (*b.data)[bIndex]);
+            data[index] = op(a.data[aIndex], b.data[bIndex]);
             return;
         }
 
@@ -550,7 +545,7 @@ protected:
     template <typename Func>
     void apply_binary_inplace_helper(const Tensor& other, Func op, int index, int otherIndex, int axis) {
         if (axis == (int)shape.size()) {
-            op((*data)[index], (*other.data)[otherIndex]);
+            op(data[index], other.data[otherIndex]);
             return;
         }
         
@@ -574,7 +569,7 @@ protected:
     template <typename Func>
     void apply_unary_helper(const Tensor& other, Func op, int index, int otherIndex, int axis) {
         if (axis == shape.size()) {
-            (*data)[index] = op((*other.data)[otherIndex]);
+            data[index] = op(other.data[otherIndex]);
             return;
         }
 
@@ -587,7 +582,7 @@ protected:
     template <typename Func>
     void apply_unary_inplace_helper(Func op, int index, int axis) {
         if (axis == (int)shape.size()) {
-            op((*data)[index]);
+            op(data[index]);
             return;
         }
 
@@ -605,9 +600,9 @@ protected:
             for (size_t i = 0; i < shape[axis]; i++) {
                 for (size_t j = 0; j < shape[axis + 1]; j++) {
                     for (size_t k = 0; k < a.shape[aAxis + 1]; k++) {
-                        (*data)[index + axisIndices[axis][i] + axisIndices[axis + 1][j]] += 
-                            (*a.data)[aIndex + a.axisIndices[aAxis][i] + a.axisIndices[aAxis + 1][k]] * 
-                            (*b.data)[bIndex + b.axisIndices[bAxis][k] + b.axisIndices[bAxis + 1][j]];
+                        data[index + axisIndices[axis][i] + axisIndices[axis + 1][j]] += 
+                            a.data[aIndex + a.axisIndices[aAxis][i] + a.axisIndices[aAxis + 1][k]] * 
+                            b.data[bIndex + b.axisIndices[bAxis][k] + b.axisIndices[bAxis + 1][j]];
                     }
                 }
             }
@@ -637,7 +632,7 @@ protected:
 
     void sum_helper(const Tensor& other, const std::vector<bool>& reduceAxis, int index, int otherIndex, int axis, int otherAxis) {
         if (otherAxis == (int)other.shape.size()) {
-            (*data)[index] += (*other.data)[otherIndex];
+            data[index] += other.data[otherIndex];
             return;
         }        
 

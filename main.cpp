@@ -76,6 +76,7 @@ void run_tests() {
 }
 
 int main() {
+    run_tests();
     Expression<> a({1, 2, 3}, true), b({4, 5, 6}, true);
     a.value().print();
     b.value().print();
