@@ -161,3 +161,14 @@ protected:
 } // namespace autograd
 
 #endif // AUTOGRAD_H
+
+
+/*
+Considerations:
+- Global list (can be switched with RAII guards) of all operations
+ - Pros
+  - Don't need to store context and propagate backwards since implicit dag sort
+ - Cons
+  - Weird to use if loss is computed outside model
+
+*/

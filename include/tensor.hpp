@@ -187,10 +187,6 @@ public:
     Tensor apply_binary(const Tensor& other, Func op) const {
         std::vector<size_t> shape = broadcast_shape(this->shape, other.shape);
 
-        if (shape.size() == 0) {
-            throw std::invalid_argument("Broadcast failed.");
-        }
-
         Tensor res = zeros(shape);
         res.apply_binary_helper((*this), other, op, 0, indexOffset, other.indexOffset, 0);
         return res;
@@ -302,18 +298,18 @@ public:
         return *this;
     }
 
-    Tensor sum() {
+    Tensor sum() const {
         std::vector<int> axes(shape.size());
         for (size_t i = 0; i < shape.size(); i++) axes[i] = i;
         return sum(std::move(axes));
     }
 
-    Tensor sum(int axis) {
+    Tensor sum(int axis) const {
         return sum(std::vector<int>{axis});
     }
     
     // Allows duplicates and ignores them
-    Tensor sum(std::vector<int>&& axes) {
+    Tensor sum(std::vector<int>&& axes) const {
         if (axes.size() == 0)
             return copy();
 
@@ -340,7 +336,7 @@ public:
     }
 
     // Broadcasts first n-2 dimensions
-    static Tensor matmul(const Tensor& a, const Tensor& b) {
+    friend Tensor matmul(const Tensor& a, const Tensor& b) {
         // Prepend 1 to shape of a if 1D
         Tensor aa = a.shape.size() < 2 ? a.reshape({1, a.shape[0]}) : a;
         // Append 1 to shape of b if 1D
@@ -501,6 +497,17 @@ public:
         std::cout << std::endl;
     }
 
+    Tensor broadcast_reduce_to(std::vector<size_t> shape) {
+        std::vector<int> broadcastedAxes;
+        for (size_t i = 0; i < this->shape.size(); i++) {
+            if (i >= shape.size() || this->shape[this->shape.size() - 1 - i] != shape[shape.size() - 1 - i]) {
+                broadcastedAxes.push_back(this->shape.size() - 1 - i);
+            }
+        }
+
+        return sum(std::move(broadcastedAxes));
+    }
+
 protected:
     std::shared_ptr<U[]> data;
     std::vector<Range> axisIndices;
@@ -630,7 +637,7 @@ protected:
         }
     }
 
-    void sum_helper(const Tensor& other, const std::vector<bool>& reduceAxis, int index, int otherIndex, int axis, int otherAxis) {
+    void sum_helper(const Tensor& other, const std::vector<bool>& reduceAxis, int index, int otherIndex, int axis, int otherAxis) const {
         if (otherAxis == (int)other.shape.size()) {
             data[index] += other.data[otherIndex];
             return;
@@ -649,7 +656,6 @@ protected:
         }
     }
 
-    // Returns empty vector on failure
     static std::vector<size_t> broadcast_shape(const std::vector<size_t>& a, const std::vector<size_t>& b) {
         std::vector<size_t> res;
         for (size_t i = 0; i < std::max(a.size(), b.size()); i++) {
@@ -669,7 +675,8 @@ protected:
                 res.push_back(a[a.size() - 1 - i]);
             }
             else {
-                return {};
+                throw std::invalid_argument("Broadcast failed.");
+                //return {};
             }
         }
         reverse(res.begin(), res.end());
@@ -757,7 +764,7 @@ protected:
         if (copy.start < 0) {
             copy.start += orig.shape[idx];
         }
-        if (copy.start < 0 || copy.start >= orig.shape[idx]) {
+        if (copy.start < 0 || copy.start >= (int)orig.shape[idx]) {
             throw std::invalid_argument("Index out of bounds.");
         }
 
@@ -781,3 +788,11 @@ protected:
 } // namespace linalg
 
 #endif // TENSOR_H
+
+
+/*
+Future optimizations:
+- store backprop functions in arena instead of capturing lambdas to avoid heap allocations
+- 
+
+*/
