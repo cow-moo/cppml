@@ -169,6 +169,29 @@ void test_autodiff_deep_graph() {
     assert((*c.grad)[0] == 12);
 }
 
+void test_range_indexing() {
+    Tensor<float> t({{0, 1, 2}, {3, 4, 5}, {6, 7, 8}});
+    using linalg::Range;
+
+    // Row slice: rows 1 and 2
+    auto t1 = t[Range(1, 2)];
+    assert(t1.shape == std::vector<size_t>({2, 3}));
+    assert((float)(t1[0, 0]) == 3);
+    assert((float)(t1[1, 2]) == 8);
+
+    // Column slice: columns 0 and 1 of all rows
+    auto t2 = t[Range(), Range(0, 2)];
+    assert(t2.shape == std::vector<size_t>({3, 2}));
+    assert((float)(t2[0, 0]) == 0);
+    assert((float)(t2[2, 1]) == 7);
+
+    // Full slice using -1 length (to end)
+    auto t3 = t[Range(1, -1), Range(1, -1)];
+    assert(t3.shape == std::vector<size_t>({2, 2}));
+    assert((float)(t3[0, 0]) == 4);
+    assert((float)(t3[1, 1]) == 8);
+}
+
 void run_tests() {
     test_creation();
     test_indexing();
@@ -180,6 +203,7 @@ void run_tests() {
     test_autodiff_add();
     test_autodiff_mul();
     test_autodiff_deep_graph();
+    test_range_indexing();
     
     std::cout << "All tests passed!" << std::endl;
 }

@@ -15,71 +15,18 @@
 
 namespace linalg {
 
-template <typename T>
-concept Iterable = requires(T t) {
-    std::begin(t);
-    std::end(t);
-    t.size();
-};
+// Length of -1 means index the rest of the dimension.
+struct Range {
+    int start, length, step;
 
-template <typename T>
-concept IterableOfInt = Iterable<T> && (requires(T t, std::size_t i) {
-    { t[i] } -> std::same_as<int>;
-} || requires(T t, std::size_t i) {
-    { t[i] } -> std::same_as<int&>;
-});
-
-template <typename T>
-concept IntOrIterableOfInt = std::same_as<T, int> || std::same_as<T, size_t> || IterableOfInt<T>;
-
-// Length of 0 means index the rest of the dimension.
-class Range {
-public:
-    class Iterator {
-    public:
-        Iterator(int current, int step) : current(current), step(step) {}
-        int operator*() const { return current; }
-        Iterator& operator++() { current += step; return *this; }
-        bool operator!=(const Iterator& other) const { return step > 0 ? current < other.current : current > other.current; }
-    private:
-        int current, step;
-    };
-
-    // don't remember what this was for
-    //using value_type = int;
-
-    Range() : start(0), length(0), step(1) {}
+    Range() : start(0), length(-1), step(1) {}
     Range(int length) : start(0), length(length), step(1) {}
     Range(int start, int length, int step = 1) : start(start), length(length), step(step) {}
-
-    Iterator begin() const { return Iterator(start, step); }
-    Iterator end() const { return Iterator(start + length * step, step); }
-
-    int operator[](int i) const {
-        if (i >= length) {
-            throw std::invalid_argument("Range index out of bounds.");
-        }
-        return start + i * step;
-    }
-
-    // Range composition
-    Range operator[](const Range& other) const {
-        if (other.start + (other.length - 1) * other.step >= length || other.start >= length || other.start + (other.length - 1) * other.step < 0 || other.start < 0) {
-            throw std::invalid_argument("Range index out of bounds.");
-        }
-        return Range((*this)[other.start], other.length, step * other.step);
-    }
-
-    int size() const {
-        return length;
-    }
 
     friend std::ostream& operator<<(std::ostream& os, const Range& t) {
         os << "Range(" << t.start << ", " << t.length << ", " << t.step << ")";
         return os;
     }
-
-    int start, length, step;
 };
 
 // struct Shape {
@@ -103,7 +50,7 @@ public:
     Tensor(const std::initializer_list<U>& values) : data(new U[values.size()]) {
         memcpy(data.get(), values.begin(), values.size() * sizeof(U));
         shape = {values.size()};
-        axisIndices = {Range(0, values.size(), 1)};
+        strides = {1};
     }
 
     // Recursive constructor for arbitrary-dimensional tensors
@@ -114,9 +61,9 @@ public:
 
         // Determine the shape of the first slice
         shape = slices.begin()->shape;
-        axisIndices = slices.begin()->axisIndices;
+        strides = slices.begin()->strides;
 
-        size_t subSize = axisIndices.front().step * axisIndices.front().length;
+        size_t subSize = strides.front() * shape.front();
 
         data = std::shared_ptr<U[]>(new U[slices.size() * subSize]);
 
@@ -131,7 +78,7 @@ public:
         }
 
         shape.insert(shape.begin(), slices.size());
-        axisIndices.insert(axisIndices.begin(), Range(0, slices.size(), subSize));
+        strides.insert(strides.begin(), subSize);
     }
 
     static Tensor zeros(const std::vector<size_t>& shape) {
@@ -139,10 +86,10 @@ public:
         res.shape = shape;
         size_t totalSize = 1;
         for (int i = shape.size() - 1; i >= 0; i--) {
-            res.axisIndices.push_back(Range(0, shape[i], totalSize));
+            res.strides.push_back(totalSize);
             totalSize *= shape[i];
         }
-        reverse(res.axisIndices.begin(), res.axisIndices.end());
+        reverse(res.strides.begin(), res.strides.end());
         res.data = std::shared_ptr<U[]>(new U[totalSize]);
         std::fill(res.data.get(), res.data.get() + totalSize, 0);
         return res;
@@ -153,10 +100,10 @@ public:
         res.shape = shape;
         size_t totalSize = 1;
         for (int i = shape.size() - 1; i >= 0; i--) {
-            res.axisIndices.push_back(Range(0, shape[i], totalSize));
+            res.strides.push_back(totalSize);
             totalSize *= shape[i];
         }
-        reverse(res.axisIndices.begin(), res.axisIndices.end());
+        reverse(res.strides.begin(), res.strides.end());
         res.data = std::shared_ptr<U[]>(new U[totalSize]);
 
         std::mt19937 generator(seed ? *seed : std::random_device{}());
@@ -175,7 +122,7 @@ public:
     }
 
     // Variadic template access operator
-    template <IntOrIterableOfInt... Args>
+    template <typename... Args>
     TensorProxy<U> operator[](Args... args) const {
         return TensorProxy<U>(*this, std::index_sequence_for<Args...>{}, std::forward<Args>(args)...);
     }
@@ -355,13 +302,13 @@ public:
         if (a.shape.size() < 2) {
             // Remove 1 if a was reshaped
             assert(res.shape[res.shape.size() - 2] == 1);
-            res.axisIndices.erase(res.axisIndices.end() - 2);
+            res.strides.erase(res.strides.end() - 2);
             res.shape.erase(res.shape.end() - 2);
         }
         if (b.shape.size() < 2) {
             // Remove 1 if b was reshaped
             assert(res.shape.back() == 1);
-            res.axisIndices.pop_back();
+            res.strides.pop_back();
             res.shape.pop_back();
         }
         return res;
@@ -369,7 +316,7 @@ public:
 
     Tensor T() const {
         Tensor res(*this);
-        std::reverse(res.axisIndices.begin(), res.axisIndices.end());
+        std::reverse(res.strides.begin(), res.strides.end());
         std::reverse(res.shape.begin(), res.shape.end());
         return res; // Should do NRVO
     }
@@ -398,13 +345,13 @@ public:
         size_t lNew = 0, rNew = 0;
         size_t sizeNew = 1;
 
-        std::vector<Range> newAxisIndices;
+        std::vector<size_t> newStrides;
 
         // Logic is still a little sus but seems to work
         bool full = true;
         while (lNew < newShape.size()) {
             if (sizeCur < sizeNew && cur < shape.size()) {
-                if (axisIndices[cur - 1].step != axisIndices[cur].step * axisIndices[cur].length || axisIndices[cur].start != 0)
+                if (strides[cur - 1] != strides[cur] * shape[cur])
                     full = false;
                 sizeCur *= shape[cur++];
             }
@@ -419,10 +366,10 @@ public:
                     return copy().reshape(newShape);
                 }
 
-                int stride = axisIndices[cur - 1].step;
+                int stride = strides[cur - 1];
                 for (; lNew < rNew; lNew++) {
                     sizeNew /= newShape[lNew];
-                    newAxisIndices.push_back(Range(0, newShape[lNew], sizeNew * stride));
+                    newStrides.push_back(sizeNew * stride);
                 }
                 assert(sizeNew == 1);
 
@@ -435,7 +382,7 @@ public:
         }
 
         Tensor res(*this);
-        res.axisIndices = newAxisIndices;
+        res.strides = newStrides;
         res.shape = newShape;
 
         return res;
@@ -476,20 +423,6 @@ public:
         std::cout << "): " << (*this) << std::endl;
     }
 
-    void print_axis_indices() {
-        std::cout << "[";
-        for (auto& range : axisIndices) {
-            std::cout << range << ", ";
-        }
-        std::cout << indexOffset;
-        // for (size_t i = 0; i < axisIndices.size(); i++) {
-        //     std::cout << axisIndices[i];
-        //     if (i < axisIndices.size() - 1)
-        //         std::cout << ", ";
-        // }
-        std::cout << "]" << std::endl;
-    }
-
     void print_shape() const {
         for (auto dim : shape) {
             std::cout << dim << " ";
@@ -510,7 +443,7 @@ public:
 
 protected:
     std::shared_ptr<U[]> data;
-    std::vector<Range> axisIndices;
+    std::vector<size_t> strides;
     size_t indexOffset = 0;
 
     Tensor() {}
@@ -526,22 +459,20 @@ protected:
 
         int aAxis = axis + a.shape.size() - shape.size();
         if (aAxis >= 0 && a.shape[aAxis] == 1) {
-            aIndex += a.axisIndices[aAxis][0];
             aAxis = -1;
         }
         
         int bAxis = axis + b.shape.size() - shape.size();
         if (bAxis >= 0 && b.shape[bAxis] == 1) {
-            bIndex += b.axisIndices[bAxis][0];
             bAxis = -1;
         }
 
         for (size_t i = 0; i < shape[axis]; i++) {
             apply_binary_helper(
                 a, b, op, 
-                index + axisIndices[axis][i], 
-                aIndex + (aAxis >= 0 ? a.axisIndices[aAxis][i] : 0),
-                bIndex + (bAxis >= 0 ? b.axisIndices[bAxis][i] : 0),
+                index + strides[axis] * i, 
+                aIndex + (aAxis >= 0 ? a.strides[aAxis] * i : 0),
+                bIndex + (bAxis >= 0 ? b.strides[bAxis] * i : 0),
                 axis + 1
             );
         }
@@ -558,15 +489,14 @@ protected:
         
         int otherAxis = axis + other.shape.size() - shape.size();
         if (otherAxis >= 0 && other.shape[otherAxis] == 1) {
-            otherIndex += other.axisIndices[otherAxis][0];
             otherAxis = -1;
         }
 
         for (size_t i = 0; i < shape[axis]; i++) {
             apply_binary_inplace_helper(
                 other, op, 
-                index + axisIndices[axis][i], 
-                otherIndex + (otherAxis >= 0 ? other.axisIndices[otherAxis][i] : 0),
+                index + strides[axis] * i, 
+                otherIndex + (otherAxis >= 0 ? other.strides[otherAxis] * i : 0),
                 axis + 1
             );
         }
@@ -581,7 +511,7 @@ protected:
         }
 
         for (size_t i = 0; i < shape[axis]; i++) {
-            apply_unary_helper(other, op, index + axisIndices[axis][i], otherIndex + other.axisIndices[axis][i], axis + 1);
+            apply_unary_helper(other, op, index + strides[axis] * i, otherIndex + other.strides[axis] * i, axis + 1);
         }
     }
 
@@ -594,7 +524,7 @@ protected:
         }
 
         for (size_t i = 0; i < shape[axis]; i++) {
-            apply_unary_inplace_helper(op, index + axisIndices[axis][i], axis + 1);
+            apply_unary_inplace_helper(op, index + strides[axis] * i, axis + 1);
         }
     }
 
@@ -607,9 +537,9 @@ protected:
             for (size_t i = 0; i < shape[axis]; i++) {
                 for (size_t j = 0; j < shape[axis + 1]; j++) {
                     for (size_t k = 0; k < a.shape[aAxis + 1]; k++) {
-                        data[index + axisIndices[axis][i] + axisIndices[axis + 1][j]] += 
-                            a.data[aIndex + a.axisIndices[aAxis][i] + a.axisIndices[aAxis + 1][k]] * 
-                            b.data[bIndex + b.axisIndices[bAxis][k] + b.axisIndices[bAxis + 1][j]];
+                        data[index + strides[axis] * i + strides[axis + 1] * j] += 
+                            a.data[aIndex + a.strides[aAxis] * i + a.strides[aAxis + 1] * k] * 
+                            b.data[bIndex + b.strides[bAxis] * k + b.strides[bAxis + 1] * j];
                     }
                 }
             }
@@ -617,21 +547,19 @@ protected:
         }
 
         if (aAxis >= 0 && a.shape[aAxis] == 1) {
-            aIndex += a.axisIndices[aAxis][0];
             aAxis = -1;
         }
 
         if (bAxis >= 0 && b.shape[bAxis] == 1) {
-            bIndex += b.axisIndices[bAxis][0];
             bAxis = -1;
         }
 
         for (size_t i = 0; i < shape[axis]; i++) {
             matmul_helper(
                 a, b, 
-                index + axisIndices[axis][i], 
-                aIndex + (aAxis >= 0 ? a.axisIndices[aAxis][i] : 0),
-                bIndex + (bAxis >= 0 ? b.axisIndices[bAxis][i] : 0),
+                index + strides[axis] * i, 
+                aIndex + (aAxis >= 0 ? a.strides[aAxis] * i : 0),
+                bIndex + (bAxis >= 0 ? b.strides[bAxis] * i : 0),
                 axis + 1
             );
         }
@@ -645,13 +573,13 @@ protected:
 
         if (reduceAxis[otherAxis]) {
             for (size_t i = 0; i < other.shape[otherAxis]; i++) {
-                sum_helper(other, reduceAxis, index, otherIndex + other.axisIndices[otherAxis][i], axis, otherAxis + 1);
+                sum_helper(other, reduceAxis, index, otherIndex + other.strides[otherAxis] * i, axis, otherAxis + 1);
             }
         }
         else {
             assert(shape[axis] == other.shape[otherAxis]);
             for (size_t i = 0; i < other.shape[otherAxis]; i++) {
-                sum_helper(other, reduceAxis, index + axisIndices[axis][i], otherIndex + other.axisIndices[otherAxis][i], axis + 1, otherAxis + 1);
+                sum_helper(other, reduceAxis, index + strides[axis] * i, otherIndex + other.strides[otherAxis] * i, axis + 1, otherAxis + 1);
             }
         }
     }
@@ -710,7 +638,7 @@ class TensorProxy : public Tensor<U> {
 public:
     using Tensor<U>::shape;
 
-    template <std::size_t... Is, IntOrIterableOfInt... Args>
+    template <std::size_t... Is, typename... Args>
     TensorProxy(const Tensor<U>& orig, std::index_sequence<Is...>, Args&&... args) {
         data = orig.data;
         indexOffset = orig.indexOffset;
@@ -718,8 +646,8 @@ public:
         ((process_get_arg(orig, Is, args)), ...);
         
         // Copy remaining dimensions
-        for (size_t i = sizeof...(Args); i < orig.axisIndices.size(); i++) {
-            axisIndices.push_back(orig.axisIndices[i]);
+        for (size_t i = sizeof...(Args); i < orig.strides.size(); i++) {
+            strides.push_back(orig.strides[i]);
             shape.push_back(orig.shape[i]);
         }
     }
@@ -736,11 +664,11 @@ public:
 
 protected:
     using Tensor<U>::data;
-    using Tensor<U>::axisIndices;
+    using Tensor<U>::strides;
     using Tensor<U>::indexOffset;
 
     void process_get_arg(const Tensor<U>& orig, std::size_t idx, int x) {
-        if (idx >= orig.axisIndices.size()) {
+        if (idx >= orig.shape.size()) {
             throw std::invalid_argument("Too many arguments provided for get.");
         }
         // Allow Python-style negative indexing
@@ -751,37 +679,33 @@ protected:
             throw std::invalid_argument("Index out of bounds.");
         }
         // Add to indexOffset and don't add a range to axisIndices, reducing number of axes
-        indexOffset += orig.axisIndices[idx][x];
+        indexOffset += orig.strides[idx] * x;
     }
 
-    void process_get_arg(const Tensor<U>& orig, std::size_t idx, const Range& range) {
-        if (idx >= orig.axisIndices.size()) {
+    void process_get_arg(const Tensor<U>& orig, std::size_t idx, Range range) {
+        if (idx >= orig.strides.size()) {
             throw std::invalid_argument("Too many arguments provided for get.");
         }
-        Range copy(range);
-
+        
         // Allow Python-style negative indexing
-        if (copy.start < 0) {
-            copy.start += orig.shape[idx];
+        if (range.start < 0) {
+            range.start += orig.shape[idx];
         }
-        if (copy.start < 0 || copy.start >= (int)orig.shape[idx]) {
+        if (range.start < 0 || range.start >= (int)orig.shape[idx]) {
             throw std::invalid_argument("Index out of bounds.");
         }
 
-        // Length of 0 implies index to the end
-        if (copy.length == 0) {
-            copy.length = copy.step > 0 ? (orig.shape[idx] - copy.start + copy.step - 1) / copy.step : (copy.start / -copy.step) + 1;
+        // Length of -1 implies index to the end
+        if (range.length == -1) {
+            range.length = range.step > 0 ? (orig.shape[idx] - range.start + range.step - 1) / range.step : (range.start / -range.step) + 1;
         }
-        if (copy.length <= 0) {
+        if (range.length <= 0) {
             throw std::invalid_argument("Negative length.");
         }
-
-        // Range defines composition with operator[] which we use to compute the new range
-        axisIndices.push_back(orig.axisIndices[idx][copy]);
-        shape.push_back(axisIndices.back().length);
-
-        indexOffset += axisIndices.back().start;
-        axisIndices.back().start = 0;
+       
+        shape.push_back(range.length);
+        strides.push_back(orig.strides[idx] * range.step);
+        indexOffset += orig.strides[idx] * range.start;
     }
 };
 
@@ -793,6 +717,9 @@ protected:
 /*
 Future optimizations:
 - store backprop functions in arena instead of capturing lambdas to avoid heap allocations
-- 
+- make data into an intrusive pointer to avoid an indirection
 
+
+do proper tensor/tensorview with ownership so that we can be confident we're storing data
+make tensors own data
 */
