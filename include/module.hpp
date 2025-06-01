@@ -23,14 +23,8 @@ public:
 
     virtual Expression<T> forward(const Expression<T>& input) = 0;
 
-    void backward() {
-        graph_->backward();
-    }
-
-    void zero_grad() {
-        for (auto &w : weights_) {
-            w.grad[linalg::Range()] = 0;
-        }
+    Expression<T> operator()(const Expression<T>& input) {
+        return forward(input);
     }
 
     std::vector<Expression<T>> weights() {
@@ -51,8 +45,25 @@ template <typename T = float>
 class Linear : public Module<T> {
 public:
     Linear(size_t inputDim, size_t outputDim, std::shared_ptr<ComputationGraph> graph=nullptr) : Module<T>(graph) {
-        weights_.push_back(Expression(Tensor<T>::normal({inputDim, outputDim}), graph_.get()));
-        weights_.push_back(Expression(Tensor<T>::normal({outputDim}), graph_.get()));
+        weights_.push_back(Expression(Tensor<T>::normal({inputDim, outputDim}, 0, sqrt(1 / inputDim)), graph_.get(), "W"));
+        weights_.push_back(Expression(Tensor<T>::zeros({outputDim}), graph_.get(), "b"));
+    }
+
+    Expression<T> forward(const Expression<T>& input) override {
+        return matmul(input, weights_[0]) + weights_[1];
+    }
+protected:
+    using Module<T>::weights_;
+    using Module<T>::submodules_;
+    using Module<T>::graph_;
+};
+
+template <typename T = float>
+class LinearReLU : public Module<T> {
+public:
+    LinearReLU(size_t inputDim, size_t outputDim, std::shared_ptr<ComputationGraph> graph=nullptr) : Module<T>(graph) {
+        weights_.push_back(Expression(Tensor<T>::normal({inputDim, outputDim}, 0, sqrt(2 / inputDim)), graph_.get(), "W"));
+        weights_.push_back(Expression(Tensor<T>::zeros({outputDim}), graph_.get(), "b"));
     }
 
     Expression<T> forward(const Expression<T>& input) override {

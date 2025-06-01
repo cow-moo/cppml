@@ -4,6 +4,7 @@
 #include <vector>
 #include <functional>
 #include "tensor.hpp"
+#include "shape.hpp"
 
 using linalg::Tensor;
 
@@ -27,14 +28,16 @@ public:
     Tensor<T> value;
     std::optional<Tensor<T>> grad;
     ComputationGraph* graph; // could use weak_ptr but it doesn't have easy nullptr
+    std::string name;
 
-    Expression(const Tensor<T>& value, ComputationGraph* graph=nullptr) : value(value), graph(graph) {
+    Expression(const Tensor<T>& value, ComputationGraph* graph=nullptr, std::string name="unnamed") : value(value), graph(graph), name(name) {
         if (graph) {
             grad.emplace(Tensor<T>::zeros(value.shape()));
         }
     }
 
-    Expression(const Expression& other) : value(other.value), grad(other.grad), graph(other.graph) {}
+    Expression(const Expression& other) 
+        : value(other.value), grad(other.grad), graph(other.graph), name(other.name) {}
 
     // Rebinding assignment
     Expression& operator=(const Expression& other) {
@@ -43,7 +46,12 @@ public:
         if (other.grad) {
             grad.emplace(*other.grad);
         }
+        name = other.name;
         return *this;
+    }
+
+    const Shape& shape() const {
+        return value.shape();
     }
 
     // Should only be called on the final loss function
@@ -57,7 +65,7 @@ public:
 
     // undefined behavior if a and b come from different computation graphs
     friend Expression operator+(const Expression& a, const Expression& b) {
-        Expression res(a.value + b.value, a.graph == nullptr ? b.graph : a.graph);
+        Expression res(a.value + b.value, a.graph == nullptr ? b.graph : a.graph, "+");
 
         if (res.graph) {
             res.graph->tape.push_back([grad = *res.grad, aGrad = a.grad, bGrad = b.grad]() mutable {
@@ -73,9 +81,26 @@ public:
         return res;
     }
 
+    friend Expression operator-(const Expression& a, const Expression& b) {
+        Expression res(a.value - b.value, a.graph == nullptr ? b.graph : a.graph, "-");
+
+        if (res.graph) {
+            res.graph->tape.push_back([grad = *res.grad, aGrad = a.grad, bGrad = b.grad]() mutable {
+                if (aGrad) {
+                    *aGrad += grad.broadcast_reduce_to(aGrad->shape());
+                }
+                if (bGrad) {
+                    *bGrad -= grad.broadcast_reduce_to(bGrad->shape());
+                }
+            });
+        }
+
+        return res;
+    }
+
     // undefined behavior if a and b come from different computation graphs
     friend Expression operator*(const Expression& a, const Expression& b) {
-        Expression res(a.value * b.value, a.graph == nullptr ? b.graph : a.graph);
+        Expression res(a.value * b.value, a.graph == nullptr ? b.graph : a.graph, "*");
 
         if (res.graph) {
             res.graph->tape.push_back([grad = *res.grad, aGrad = a.grad, bGrad = b.grad, aValue = a.value, bValue = b.value]() mutable {
@@ -91,13 +116,58 @@ public:
         return res;
     }
 
+    friend Expression operator/(const Expression& a, const Expression& b) {
+        Expression res(a.value / b.value, a.graph == nullptr ? b.graph : a.graph, "/");
+
+        if (res.graph) {
+            res.graph->tape.push_back([grad = *res.grad, aGrad = a.grad, bGrad = b.grad, aValue = a.value, bValue = b.value]() mutable {
+                if (aGrad) {
+                    *aGrad += (grad / bValue).broadcast_reduce_to(aGrad->shape());
+                }
+                if (bGrad) {
+                    *bGrad += (-grad * aValue / bValue / bValue).broadcast_reduce_to(bGrad->shape());
+                }
+            });
+        }
+
+        return res;
+    }
+
+    Expression operator*(T other) {
+        Expression res(value * other, graph, "*");
+
+        if (res.graph) {
+            res.graph->tape.push_back([resGrad = *res.grad, grad = *grad, other]() mutable {
+                grad += resGrad * other;
+            });
+        }
+
+        return res;
+    }
+
+    Expression operator/(T other) {
+        return (*this) * (1 / other);
+    }
+
     friend Expression matmul(const Expression& a, const Expression& b) {
-        Expression res(matmul(a.value, b.value), a.graph == nullptr ? b.graph : a.graph);
+        Expression res(matmul(a.value, b.value), a.graph == nullptr ? b.graph : a.graph, "matmul");
+
+        if (res.graph) {
+            res.graph->tape.push_back([grad = *res.grad, aGrad = a.grad, bGrad = b.grad, aValue = a.value, bValue = b.value]() mutable {
+                if (aGrad) {
+                    *aGrad += matmul(grad, bValue.T()).broadcast_reduce_to(aGrad->shape());
+                }
+                if (bGrad) {
+                    *bGrad += matmul(aValue.T(), grad).broadcast_reduce_to(bGrad->shape());
+                }
+            });
+        }
+
         return res;
     }
 
     Expression sum() const {
-        Expression res(value.sum(), graph);
+        Expression res(value.sum(), graph, "sum");
 
         if (res.graph) {
             res.graph->tape.push_back([resGrad = *res.grad, grad = *grad]() mutable {
@@ -109,6 +179,7 @@ public:
     }
 
     void print() const {
+        std::cout << name << std::endl;
         std::cout << "value ";
         value.print();
         if (grad) {

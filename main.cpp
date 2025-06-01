@@ -209,14 +209,66 @@ void run_tests() {
     std::cout << "All tests passed!" << std::endl;
 }
 
+template <typename T>
+Expression<T> mse_loss(const Expression<T>& a, const Expression<T>& b) {
+    Expression<T> diff = a - b;
+    return (diff * diff).sum() / diff.value.numel();
+}
+
 int main() {
     //run_tests();
 
-    module::Linear<> linear(5, 8);
-    solver::GradientDescent gd(linear.weights(), 1);
-    auto res = linear.forward({{1, 2, 3, 4, 5}});
+    // Tensor<> a({1, 2, 3});
+    // Tensor<> b = a;
+    // matmul(a, b).print();
 
-    res.print();
+    // Tensor<> a = Tensor<>::normal({6, 3, 5});
+    // a.T().print();
+    // Tensor<> b = Tensor<>::normal({5});
+    // matmul(a, b).print();
+
+    // module::Linear<> linear(5, 8);
+    // solver::GradientDescent gd(linear.weights(), 1);
+    // auto res = linear.forward({{{1, 2, 3, 4, 5}}});
+    // auto loss = mse_loss(res, Expression<>(Tensor<>::zeros(res.shape())));
+    // loss.backward();
+    // // res = res.sum();
+    // // res.backward();
+
+    // res.print();
+    // loss.print();
+    // for (auto &w : linear.weights()) {
+    //     w.print();
+    // }
+
+    // gd.step();
+
+    // for (auto &w : linear.weights()) {
+    //     w.print();
+    // }
+
+    Tensor<> x = {0, 1, 2, 3, 4};
+    x.assign(x.reshape({5, 1}));
+
+    Tensor<> y = {3, 5, 7, 9, 11};
+    y.assign(y.reshape({5, 1}));
+
+    module::Linear<> linear(1, 1);
+    solver::GradientDescent gd(linear.weights(), 0.1);
+
+    for (int epoch = 0; epoch < 100; epoch++) {
+        auto yPred = linear(x);
+        auto loss = mse_loss(yPred, Expression<>(y));
+        loss.backward();
+        gd.step();
+        gd.zero_grad();
+        loss.value.print();
+        yPred.value.print();
+    }
+    
+    for (auto &w : linear.weights()) {
+        w.print();
+    }
 
     return 0;
 }

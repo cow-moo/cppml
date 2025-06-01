@@ -12,6 +12,7 @@
 #include <cassert>
 #include <random>
 #include <optional>
+#include "shape.hpp"
 
 namespace linalg {
 
@@ -26,83 +27,6 @@ struct Range {
     friend std::ostream& operator<<(std::ostream& os, const Range& t) {
         os << "Range(" << t.start << ", " << t.length << ", " << t.step << ")";
         return os;
-    }
-};
-
-struct Shape {
-    std::vector<size_t> data;
-
-    Shape() = default;
-    Shape(std::vector<size_t> d) : data(std::move(d)) {}
-    Shape(std::initializer_list<size_t> init) : data(init) {}
-
-    operator std::vector<size_t>&() { return data; }
-    operator const std::vector<size_t>&() const { return data; }
-
-    // Forward vector methods
-    auto front() { return data.front(); }
-    auto back() { return data.back(); }
-
-    auto begin() { return data.begin(); }
-    auto end() { return data.end(); }
-    auto begin() const { return data.begin(); }
-    auto end() const { return data.end(); }
-
-    void push_back(size_t val) {
-        data.push_back(val);
-    }
-
-    void pop_back() { data.pop_back(); }
-
-    auto insert(typename std::vector<size_t>::iterator pos, size_t val) {
-        return data.insert(pos, val);
-    }
-
-    auto erase(typename std::vector<size_t>::iterator pos) {
-        return data.erase(pos);
-    }
-
-    auto erase(typename std::vector<size_t>::iterator first, typename std::vector<size_t>::iterator last) {
-        return data.erase(first, last);
-    }
-
-    bool operator==(const Shape& other) const {
-        return data == other.data;
-    }
-
-    bool operator!=(const Shape& other) const {
-        return !(*this == other);
-    }
-
-    size_t& operator[](size_t i) { return data[i]; }
-    const size_t& operator[](size_t i) const { return data[i]; }
-
-    size_t size() const { return data.size(); }
-
-    static Shape broadcast(const Shape& a, const Shape& b) {
-        Shape res;
-        for (size_t i = 0; i < std::max(a.size(), b.size()); i++) {
-            if (i >= a.size()) {
-                res.push_back(b[b.size() - 1 - i]);
-            }
-            else if (i >= b.size()) {
-                res.push_back(a[a.size() - 1 - i]);
-            }
-            else if (a[a.size() - 1 - i] == 1) {
-                res.push_back(b[b.size() - 1 - i]);
-            }
-            else if (b[b.size() - 1 - i] == 1) {
-                res.push_back(a[a.size() - 1 - i]);
-            }
-            else if (a[a.size() - 1 - i] == b[b.size() - 1 - i]) {
-                res.push_back(a[a.size() - 1 - i]);
-            }
-            else {
-                throw std::invalid_argument("Broadcast failed.");
-            }
-        }
-        std::reverse(res.begin(), res.end());
-        return Shape{res};
     }
 };
 
@@ -355,13 +279,15 @@ public:
     }
 
     // Broadcasts first n-2 dimensions
+    // 1D tensors have 1 appended (column vector)
     friend Tensor matmul(const Tensor& a, const Tensor& b) {
-        // Prepend 1 to shape of a if 1D
-        Tensor aa = a.shape_.size() < 2 ? a.reshape({1, a.shape_[0]}) : a;
+        // Append 1 to shape of a if 1D
+        Tensor aa = a.shape_.size() < 2 ? a.reshape({a.shape_[0], 1}) : a;
         // Append 1 to shape of b if 1D
         Tensor bb = b.shape_.size() < 2 ? b.reshape({b.shape_[0], 1}) : b;
 
         if (aa.shape_.back() != bb.shape_[bb.shape_.size() - 2]) {
+            std::cout << a.shape_ << " " << b.shape_ << std::endl;
             throw std::invalid_argument("Invalid shape for matmul.");
         }
         Shape shape = Shape::broadcast(std::vector<size_t>(aa.shape_.begin(), aa.shape_.begin() + aa.shape_.size() - 2), 
@@ -371,12 +297,12 @@ public:
 
         Tensor res = zeros(shape);
         res.matmul_helper(aa, bb, 0, aa.offset_, bb.offset_, 0);
-        if (a.shape_.size() < 2) {
-            // Remove 1 if a was reshaped
-            assert(res.shape_[res.shape_.size() - 2] == 1);
-            res.strides_.erase(res.strides_.end() - 2);
-            res.shape_.erase(res.shape_.end() - 2);
-        }
+        // if (a.shape_.size() < 2) {
+        //     // Remove 1 if a was reshaped
+        //     assert(res.shape_[res.shape_.size() - 2] == 1);
+        //     res.strides_.erase(res.strides_.end() - 2);
+        //     res.shape_.erase(res.shape_.end() - 2);
+        // }
         if (b.shape_.size() < 2) {
             // Remove 1 if b was reshaped
             assert(res.shape_.back() == 1);
@@ -387,10 +313,14 @@ public:
     }
 
     Tensor T() const {
+        if (shape_.size() < 2) {
+            return reshape({1, shape_[0]});
+        }
+
         Tensor res(*this);
-        std::reverse(res.strides_.begin(), res.strides_.end());
-        std::reverse(res.shape_.begin(), res.shape_.end());
-        return res; // Should do NRVO
+        std::swap(res.shape_[res.shape_.size() - 1], res.shape_[res.shape_.size() - 2]);
+        std::swap(res.strides_[res.strides_.size() - 1], res.strides_[res.strides_.size() - 2]);
+        return res;
     }
 
     Tensor reshape(const Shape& newShape) const {
@@ -460,6 +390,14 @@ public:
         return res;
     }
 
+    size_t numel() {
+        size_t res = 1;
+        for (auto x : shape_) {
+            res *= x;
+        }
+        return res;
+    }
+
     // Cast Tensors with no dimension to scalar, implicit cast for cout/math
     operator U() const {
         if (shape_.size() > 0) {
@@ -486,13 +424,14 @@ public:
     }
 
     void print() const {
-        std::cout << "(";
-        for (size_t i = 0; i < shape_.size(); i++) {
-            std::cout << shape_[i];
-            if (i < shape_.size() - 1)
-                std::cout << ", ";
-        }
-        std::cout << "): " << (*this) << std::endl;
+        std::cout << shape_;
+        // std::cout << "(";
+        // for (size_t i = 0; i < shape_.size(); i++) {
+        //     std::cout << shape_[i];
+        //     if (i < shape_.size() - 1)
+        //         std::cout << ", ";
+        // }
+        std::cout << ": " << (*this) << std::endl;
     }
 
     void print_shape() const {
