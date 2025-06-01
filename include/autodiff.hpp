@@ -178,6 +178,18 @@ public:
         return res;
     }
 
+    Expression relu() const {
+        Expression res(value.apply_unary([](T val) { return val > 0 ? val : 0; }), graph, "relu");
+
+        if (res.graph) {
+            res.graph->tape.push_back([resGrad = *res.grad, grad = *grad, value = this->value]() mutable {
+                grad += value.apply_unary([](T val) { return val > 0 ? 1 : 0; }) * resGrad;
+            });
+        }
+
+        return res;
+    }
+
     void print() const {
         std::cout << name << std::endl;
         std::cout << "value ";
@@ -188,6 +200,16 @@ public:
         }
     }
 };
+
+template <typename T>
+Expression<T> sum(const Expression<T>& expr) {
+    return expr.sum();
+}
+
+template <typename T>
+Expression<T> relu(const Expression<T>& expr) {
+    return expr.relu();
+}
 
 } // namespace autodiff
 

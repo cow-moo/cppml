@@ -12,11 +12,13 @@ namespace module {
 template <typename T>
 class Module {
 public:
-    Module(std::shared_ptr<ComputationGraph> graph) : graph_(graph) {
+    Module(std::shared_ptr<ComputationGraph> graph=nullptr) : graph_(graph) {
         if (graph_ == nullptr) {
             graph_ = std::make_shared<ComputationGraph>();
         }
     }
+
+    virtual ~Module() = default;
 
     virtual void train() {}
     virtual void eval() {}
@@ -67,7 +69,7 @@ public:
     }
 
     Expression<T> forward(const Expression<T>& input) override {
-        return matmul(input, weights_[0]) + weights_[1];
+        return relu(matmul(input, weights_[0]) + weights_[1]);
     }
 protected:
     using Module<T>::weights_;

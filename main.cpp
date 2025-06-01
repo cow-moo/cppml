@@ -212,8 +212,25 @@ void run_tests() {
 template <typename T>
 Expression<T> mse_loss(const Expression<T>& a, const Expression<T>& b) {
     Expression<T> diff = a - b;
-    return (diff * diff).sum() / diff.value.numel();
+    return sum(diff * diff) / diff.value.numel();
 }
+
+class MLP : public module::Module<float> {
+public:
+    MLP() {
+        submodules_.push_back(std::make_shared<module::LinearReLU<float>>(1, 8, graph_));
+        submodules_.push_back(std::make_shared<module::Linear<float>>(8, 1, graph_));
+    }
+
+    Expression<float> forward(const Expression<float>& input) override {
+        return submodules_[1]->forward(submodules_[0]->forward(input));
+    }
+
+protected:
+    using Module<float>::weights_;
+    using Module<float>::submodules_;
+    using Module<float>::graph_;
+};
 
 int main() {
     //run_tests();
@@ -247,27 +264,62 @@ int main() {
     //     w.print();
     // }
 
-    Tensor<> x = {0, 1, 2, 3, 4};
-    x.assign(x.reshape({5, 1}));
+    // Tensor<> x = {0, 1, 2, 3, 4};
+    // x.assign(x.reshape({5, 1}));
 
-    Tensor<> y = {3, 5, 7, 9, 11};
-    y.assign(y.reshape({5, 1}));
+    // Tensor<> y = {3, 5, 7, 9, 11};
+    // y.assign(y.reshape({5, 1}));
 
-    module::Linear<> linear(1, 1);
-    solver::GradientDescent gd(linear.weights(), 0.1);
+    // module::LinearReLU<> linear(1, 1);
+    // solver::GradientDescent gd(linear.weights(), 0.1);
 
-    for (int epoch = 0; epoch < 100; epoch++) {
-        auto yPred = linear(x);
+    // for (int epoch = 0; epoch < 100; epoch++) {
+    //     auto yPred = linear(x);
+    //     auto loss = mse_loss(yPred, Expression<>(y));
+    //     loss.backward();
+    //     gd.step();
+    //     gd.zero_grad();
+    //     loss.value.print();
+    //     yPred.value.print();
+    // }
+    
+    // for (auto &w : linear.weights()) {
+    //     w.print();
+    // }
+
+    Tensor<> x = Tensor<>::zeros({100, 1});
+    Tensor<> y = Tensor<>::zeros({100, 1});
+    for (int i = 0; i < 100; ++i) {
+        float v = -1.0f + 2.0f * i / 99;
+        x[i][0] = v;
+        y[i][0] = v * v;
+    }
+
+    // x[Range(5)].print();
+    // y[Range(5)].print();
+
+    MLP model;
+    solver::GradientDescent gd(model.weights(), 0.01);
+
+    for (int epoch = 0; epoch < 1000; epoch++) {
+        auto yPred = model(x);
         auto loss = mse_loss(yPred, Expression<>(y));
         loss.backward();
         gd.step();
         gd.zero_grad();
-        loss.value.print();
-        yPred.value.print();
+        if (epoch % 100 == 0)
+            loss.value.print();
+        //yPred.value.print();
     }
+    mse_loss(model(x), Expression<>(y)).print();
+
+    std::cout << "y pred" << std::endl;
+    (model(x).value - y).print();
+    //std::cout << "y" << std::endl;
+    //y.print();
     
-    for (auto &w : linear.weights()) {
-        w.print();
+    for (auto &w : model.weights()) {
+        w.value.print();
     }
 
     return 0;

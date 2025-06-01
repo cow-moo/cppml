@@ -149,7 +149,7 @@ public:
     }
 
     // Apply some operation on some tensor, returning a new one
-    // Func should have signature op(U) -> void
+    // Func should have signature op(U) -> U
     template <typename Func>
     Tensor apply_unary(Func op) const {
         Tensor res = zeros(shape_);
