@@ -2,6 +2,7 @@
 #include "tensor.hpp"
 #include "autodiff.hpp"
 #include "module.hpp"
+#include "solver.hpp"
 
 using linalg::Tensor;
 using linalg::Range;
@@ -10,10 +11,10 @@ using autodiff::ComputationGraph;
 
 void test_creation() {
     Tensor<float> t1 = Tensor<float>::zeros({2, 3});
-    assert(t1.shape == std::vector<size_t>({2, 3}));
+    assert(t1.shape() == std::vector<size_t>({2, 3}));
     
     Tensor<float> t2({{1, 2, 3}, {4, 5, 6}});
-    assert(t2.shape == std::vector<size_t>({2, 3}));
+    assert(t2.shape() == std::vector<size_t>({2, 3}));
 }
 
 void test_indexing() {
@@ -27,7 +28,7 @@ void test_broadcasting() {
     Tensor<float> t1({1, 2, 3});
     Tensor<float> t2({{1, 2, 3}, {4, 5, 6}});
     Tensor<float> res = t1 + t2;
-    assert(res.shape == std::vector<size_t>({2, 3}));
+    assert(res.shape() == std::vector<size_t>({2, 3}));
 }
 
 void test_elementwise_ops() {
@@ -42,21 +43,21 @@ void test_elementwise_ops() {
 void test_sum() {
     Tensor<float> t({{1, 2, 3}, {4, 5, 6}});
     Tensor<float> s = t.sum(0);
-    assert(s.shape == std::vector<size_t>({3}));
+    assert(s.shape() == std::vector<size_t>({3}));
     assert((float)s[1] == 7);
 }
 
 void test_reshape() {
     Tensor<float> t({{1, 2, 3}, {4, 5, 6}});
     Tensor<float> r = t.reshape({3, 2});
-    assert(r.shape == std::vector<size_t>({3, 2}));
+    assert(r.shape() == std::vector<size_t>({3, 2}));
 }
 
 void test_matmul() {
     Tensor<float> a({{1, 2}, {3, 4}});
     Tensor<float> b({{5, 6}, {7, 8}});
     Tensor<float> c = matmul(a, b);
-    assert(c.shape == std::vector<size_t>({2, 2}));
+    assert(c.shape() == std::vector<size_t>({2, 2}));
     assert((float)(c[0, 0]) == 19);
     assert((float)(c[1, 1]) == 50);
 }
@@ -175,19 +176,19 @@ void test_range_indexing() {
 
     // Row slice: rows 1 and 2
     auto t1 = t[Range(1, 2)];
-    assert(t1.shape == std::vector<size_t>({2, 3}));
+    assert(t1.shape() == std::vector<size_t>({2, 3}));
     assert((float)(t1[0, 0]) == 3);
     assert((float)(t1[1, 2]) == 8);
 
     // Column slice: columns 0 and 1 of all rows
     auto t2 = t[Range(), Range(0, 2)];
-    assert(t2.shape == std::vector<size_t>({3, 2}));
+    assert(t2.shape() == std::vector<size_t>({3, 2}));
     assert((float)(t2[0, 0]) == 0);
     assert((float)(t2[2, 1]) == 7);
 
     // Full slice using -1 length (to end)
     auto t3 = t[Range(1, -1), Range(1, -1)];
-    assert(t3.shape == std::vector<size_t>({2, 2}));
+    assert(t3.shape() == std::vector<size_t>({2, 2}));
     assert((float)(t3[0, 0]) == 4);
     assert((float)(t3[1, 1]) == 8);
 }
@@ -209,7 +210,13 @@ void run_tests() {
 }
 
 int main() {
-    run_tests();
+    //run_tests();
+
+    module::Linear<> linear(5, 8);
+    solver::GradientDescent gd(linear.weights(), 1);
+    auto res = linear.forward({{1, 2, 3, 4, 5}});
+
+    res.print();
 
     return 0;
 }

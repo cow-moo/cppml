@@ -7,48 +7,63 @@ using linalg::Tensor;
 using autodiff::Expression;
 using autodiff::ComputationGraph;
 
+namespace module {
+
 template <typename T>
 class Module {
 public:
-    Module(std::shared_ptr<ComputationGraph> graph) : graph(graph) {
-        if (graph == nullptr) {
-            graph = std::make_shared<ComputationGraph>();
+    Module(std::shared_ptr<ComputationGraph> graph) : graph_(graph) {
+        if (graph_ == nullptr) {
+            graph_ = std::make_shared<ComputationGraph>();
         }
     }
 
-    virtual void train();
-    virtual void eval();
+    virtual void train() {}
+    virtual void eval() {}
 
-    virtual Expression<T> forward(const Expression<T>& input);
+    virtual Expression<T> forward(const Expression<T>& input) = 0;
 
     void backward() {
-        graph->backward();
+        graph_->backward();
     }
 
     void zero_grad() {
-        for (auto &w : weights) {
+        for (auto &w : weights_) {
             w.grad[linalg::Range()] = 0;
         }
     }
+
+    std::vector<Expression<T>> weights() {
+        std::vector<Expression<T>> res(weights_);
+        for (auto &m : submodules_) {
+            auto temp = m->weights();
+            res.insert(res.end(), temp.begin(), temp.end());
+        }
+        return res;
+    }
 protected:
-    std::vector<Expression<T>> weights;
-    std::vector<std::shared_ptr<Module<T>>> submodules;
-    std::shared_ptr<ComputationGraph> graph;
+    std::vector<Expression<T>> weights_;
+    std::vector<std::shared_ptr<Module<T>>> submodules_;
+    std::shared_ptr<ComputationGraph> graph_;
 };
 
-template <typename T>
+template <typename T = float>
 class Linear : public Module<T> {
 public:
-    Linear(int inputDim, int outputDim, std::shared_ptr<ComputationGraph> graph=nullptr) : Module<T>(graph) {
-        weights.push_back(Expression(Tensor<T>::normal({inputDim, outputDim}), graph));
-        weights.push_back(Expression(Tensor<T>::normal({outputDim}), graph));
+    Linear(size_t inputDim, size_t outputDim, std::shared_ptr<ComputationGraph> graph=nullptr) : Module<T>(graph) {
+        weights_.push_back(Expression(Tensor<T>::normal({inputDim, outputDim}), graph_.get()));
+        weights_.push_back(Expression(Tensor<T>::normal({outputDim}), graph_.get()));
     }
 
     Expression<T> forward(const Expression<T>& input) override {
-        return Expression<T>::matmul(input, weights[0]) + weights[1];
+        return matmul(input, weights_[0]) + weights_[1];
     }
 protected:
-    using Module<T>::weights;
-    using Module<T>::submodules;
+    using Module<T>::weights_;
+    using Module<T>::submodules_;
+    using Module<T>::graph_;
 };
+
+} // namespace module
+
 #endif // MODULE_H

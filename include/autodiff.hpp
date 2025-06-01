@@ -30,14 +30,26 @@ public:
 
     Expression(const Tensor<T>& value, ComputationGraph* graph=nullptr) : value(value), graph(graph) {
         if (graph) {
-            grad = Tensor<T>::zeros(value.shape);
+            grad.emplace(Tensor<T>::zeros(value.shape()));
         }
+    }
+
+    Expression(const Expression& other) : value(other.value), grad(other.grad), graph(other.graph) {}
+
+    // Rebinding assignment
+    Expression& operator=(const Expression& other) {
+        value.assign(other.value);
+        grad.reset();
+        if (other.grad) {
+            grad.emplace(*other.grad);
+        }
+        return *this;
     }
 
     // Should only be called on the final loss function
     void backward() {
         assert(graph != nullptr);
-        assert(grad->shape.size() == 0);
+        assert(grad->shape().size() == 0);
 
         (*grad) += 1;
         graph->backward();
@@ -50,10 +62,10 @@ public:
         if (res.graph) {
             res.graph->tape.push_back([grad = *res.grad, aGrad = a.grad, bGrad = b.grad]() mutable {
                 if (aGrad) {
-                    *aGrad += grad.broadcast_reduce_to(aGrad->shape);
+                    *aGrad += grad.broadcast_reduce_to(aGrad->shape());
                 }
                 if (bGrad) {
-                    *bGrad += grad.broadcast_reduce_to(bGrad->shape);
+                    *bGrad += grad.broadcast_reduce_to(bGrad->shape());
                 }
             });
         }
@@ -68,14 +80,19 @@ public:
         if (res.graph) {
             res.graph->tape.push_back([grad = *res.grad, aGrad = a.grad, bGrad = b.grad, aValue = a.value, bValue = b.value]() mutable {
                 if (aGrad) {
-                    *aGrad += (grad * bValue).broadcast_reduce_to(aGrad->shape);
+                    *aGrad += (grad * bValue).broadcast_reduce_to(aGrad->shape());
                 }
                 if (bGrad) {
-                    *bGrad += (grad * aValue).broadcast_reduce_to(bGrad->shape);
+                    *bGrad += (grad * aValue).broadcast_reduce_to(bGrad->shape());
                 }
             });
         }
 
+        return res;
+    }
+
+    friend Expression matmul(const Expression& a, const Expression& b) {
+        Expression res(matmul(a.value, b.value), a.graph == nullptr ? b.graph : a.graph);
         return res;
     }
 

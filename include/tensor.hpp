@@ -29,28 +29,91 @@ struct Range {
     }
 };
 
-// struct Shape {
-//     std::vector<size_t> data;
+struct Shape {
+    std::vector<size_t> data;
 
-//     size_t operator[](int i) { return data[i]; }
-// };
+    Shape() = default;
+    Shape(std::vector<size_t> d) : data(std::move(d)) {}
+    Shape(std::initializer_list<size_t> init) : data(init) {}
 
-template <typename U = float>
-class TensorProxy;
+    operator std::vector<size_t>&() { return data; }
+    operator const std::vector<size_t>&() const { return data; }
+
+    // Forward vector methods
+    auto front() { return data.front(); }
+    auto back() { return data.back(); }
+
+    auto begin() { return data.begin(); }
+    auto end() { return data.end(); }
+    auto begin() const { return data.begin(); }
+    auto end() const { return data.end(); }
+
+    void push_back(size_t val) {
+        data.push_back(val);
+    }
+
+    void pop_back() { data.pop_back(); }
+
+    auto insert(typename std::vector<size_t>::iterator pos, size_t val) {
+        return data.insert(pos, val);
+    }
+
+    auto erase(typename std::vector<size_t>::iterator pos) {
+        return data.erase(pos);
+    }
+
+    auto erase(typename std::vector<size_t>::iterator first, typename std::vector<size_t>::iterator last) {
+        return data.erase(first, last);
+    }
+
+    bool operator==(const Shape& other) const {
+        return data == other.data;
+    }
+
+    bool operator!=(const Shape& other) const {
+        return !(*this == other);
+    }
+
+    size_t& operator[](size_t i) { return data[i]; }
+    const size_t& operator[](size_t i) const { return data[i]; }
+
+    size_t size() const { return data.size(); }
+
+    static Shape broadcast(const Shape& a, const Shape& b) {
+        Shape res;
+        for (size_t i = 0; i < std::max(a.size(), b.size()); i++) {
+            if (i >= a.size()) {
+                res.push_back(b[b.size() - 1 - i]);
+            }
+            else if (i >= b.size()) {
+                res.push_back(a[a.size() - 1 - i]);
+            }
+            else if (a[a.size() - 1 - i] == 1) {
+                res.push_back(b[b.size() - 1 - i]);
+            }
+            else if (b[b.size() - 1 - i] == 1) {
+                res.push_back(a[a.size() - 1 - i]);
+            }
+            else if (a[a.size() - 1 - i] == b[b.size() - 1 - i]) {
+                res.push_back(a[a.size() - 1 - i]);
+            }
+            else {
+                throw std::invalid_argument("Broadcast failed.");
+            }
+        }
+        std::reverse(res.begin(), res.end());
+        return Shape{res};
+    }
+};
 
 template <typename U = float>
 class Tensor {
 public:
-    // Should be fixed on construction
-    std::vector<size_t> shape;
-
-    friend class TensorProxy<U>;
-    
     // Constructor for 1D tensor
-    Tensor(const std::initializer_list<U>& values) : data(new U[values.size()]) {
-        memcpy(data.get(), values.begin(), values.size() * sizeof(U));
-        shape = {values.size()};
-        strides = {1};
+    Tensor(const std::initializer_list<U>& values) : data_(new U[values.size()]) {
+        memcpy(data_.get(), values.begin(), values.size() * sizeof(U));
+        shape_ = {values.size()};
+        strides_ = {1};
     }
 
     // Recursive constructor for arbitrary-dimensional tensors
@@ -60,71 +123,80 @@ public:
         }
 
         // Determine the shape of the first slice
-        shape = slices.begin()->shape;
-        strides = slices.begin()->strides;
+        shape_ = slices.begin()->shape_;
+        strides_ = slices.begin()->strides_;
 
-        size_t subSize = strides.front() * shape.front();
+        size_t subSize = strides_.front() * shape_.front();
 
-        data = std::shared_ptr<U[]>(new U[slices.size() * subSize]);
+        data_ = std::shared_ptr<U[]>(new U[slices.size() * subSize]);
 
-        U* p = data.get();
+        U* p = data_.get();
         // Check consistency of shapes across slices
         for (const Tensor<U>& slice : slices) {
-            if (slice.shape != shape) {
+            if (slice.shape_ != shape_) {
                 throw std::invalid_argument("All slices must have the same shape");
             }
-            memcpy(p, slice.data.get(), subSize * sizeof(U));
+            memcpy(p, slice.data_.get(), subSize * sizeof(U));
             p += subSize;
         }
 
-        shape.insert(shape.begin(), slices.size());
-        strides.insert(strides.begin(), subSize);
+        shape_.insert(shape_.begin(), slices.size());
+        strides_.insert(strides_.begin(), subSize);
     }
 
-    static Tensor zeros(const std::vector<size_t>& shape) {
-        Tensor res;
-        res.shape = shape;
-        size_t totalSize = 1;
-        for (int i = shape.size() - 1; i >= 0; i--) {
-            res.strides.push_back(totalSize);
-            totalSize *= shape[i];
-        }
-        reverse(res.strides.begin(), res.strides.end());
-        res.data = std::shared_ptr<U[]>(new U[totalSize]);
-        std::fill(res.data.get(), res.data.get() + totalSize, 0);
+    Tensor(const Tensor& other) {
+        assign(other);
+    }
+
+    // Elementwise assignment
+    Tensor& operator=(U other) {
+        apply_unary_inplace([other](U& a) { a = other; });
+        return *this;
+    }
+
+    // Elementwise assignment
+    Tensor& operator=(const Tensor& other) {
+        apply_binary_inplace(other, [](U& a, U b) { a = b; });
+        return *this;
+    }
+
+    // Rebinding assignment
+    Tensor& assign(const Tensor& other) {
+        data_ = other.data_;
+        shape_ = other.shape_;
+        strides_ = other.strides_;
+        offset_ = other.offset_;
+        return *this;
+    }
+
+    static Tensor zeros(const Shape& shape) {
+        Tensor res(shape);
+        res = 0;
+        //std::fill(res.data_.get(), res.data_.get(), 0);
         return res;
     }
 
-    static Tensor normal(const std::vector<size_t>& shape, U mean = 0, U std = 1, std::optional<uint> seed = std::nullopt) {
-        Tensor res;
-        res.shape = shape;
-        size_t totalSize = 1;
-        for (int i = shape.size() - 1; i >= 0; i--) {
-            res.strides.push_back(totalSize);
-            totalSize *= shape[i];
-        }
-        reverse(res.strides.begin(), res.strides.end());
-        res.data = std::shared_ptr<U[]>(new U[totalSize]);
+    static Tensor normal(const Shape& shape, U mean = 0, U std = 1, std::optional<uint> seed = std::nullopt) {
+        Tensor res(shape);
 
         std::mt19937 generator(seed ? *seed : std::random_device{}());
         std::normal_distribution<U> distribution(mean, std);
-        for (size_t i = 0; i < totalSize; i++) {
-            res.data[i] = distribution(generator);
-        }
+        res.apply_unary_inplace([&](U& a) { a = distribution(generator); });
+
         return res;
     }
 
     // Performs a deep copy that discards data not seen/accessed by the view
     Tensor copy() const {
-        Tensor res = zeros(shape);
+        Tensor res = zeros(shape_);
         res += *this;
         return res;
     }
 
     // Variadic template access operator
     template <typename... Args>
-    TensorProxy<U> operator[](Args... args) const {
-        return TensorProxy<U>(*this, std::index_sequence_for<Args...>{}, std::forward<Args>(args)...);
+    Tensor operator[](Args&&... args) const {
+        return Tensor(*this, std::index_sequence_for<Args...>{}, std::forward<Args>(args)...);
     }
 
     // Apply some elementwise operation on two tensors with broadcasting
@@ -132,10 +204,10 @@ public:
     // Consider using template <auto op> with constexpr op instead of passing as parameter
     template <typename Func>
     Tensor apply_binary(const Tensor& other, Func op) const {
-        std::vector<size_t> shape = broadcast_shape(this->shape, other.shape);
+        Shape shape = Shape::broadcast(this->shape_, other.shape_);
 
         Tensor res = zeros(shape);
-        res.apply_binary_helper((*this), other, op, 0, indexOffset, other.indexOffset, 0);
+        res.apply_binary_helper((*this), other, op, 0, offset_, other.offset_, 0);
         return res;
     }
 
@@ -144,11 +216,11 @@ public:
     // Func should have some signature op(U&, U) -> void
     template <typename Func>
     Tensor& apply_binary_inplace(const Tensor& other, Func op) {
-        if (shape != broadcast_shape(this->shape, other.shape)) {
+        if (shape_ != Shape::broadcast(this->shape_, other.shape_)) {
             throw std::invalid_argument("Broadcast failed.");
         }
 
-        apply_binary_inplace_helper(other, op, indexOffset, other.indexOffset, 0);
+        apply_binary_inplace_helper(other, op, offset_, other.offset_, 0);
         return *this;
     }
 
@@ -156,8 +228,8 @@ public:
     // Func should have signature op(U) -> void
     template <typename Func>
     Tensor apply_unary(Func op) const {
-        Tensor res = zeros(shape);
-        res.apply_unary_helper(*this, op, 0, indexOffset, 0);
+        Tensor res = zeros(shape_);
+        res.apply_unary_helper(*this, op, 0, offset_, 0);
         return res;
     }
 
@@ -165,7 +237,7 @@ public:
     // Func should have signature op(U&) -> void
     template <typename Func>
     Tensor& apply_unary_inplace(Func op) {
-        apply_unary_inplace_helper(op, indexOffset, 0);
+        apply_unary_inplace_helper(op, offset_, 0);
         return *this;
     }
 
@@ -246,8 +318,8 @@ public:
     }
 
     Tensor sum() const {
-        std::vector<int> axes(shape.size());
-        for (size_t i = 0; i < shape.size(); i++) axes[i] = i;
+        std::vector<int> axes(shape_.size());
+        for (size_t i = 0; i < shape_.size(); i++) axes[i] = i;
         return sum(std::move(axes));
     }
 
@@ -260,74 +332,74 @@ public:
         if (axes.size() == 0)
             return copy();
 
-        std::vector<bool> reduceAxis(shape.size(), false);
+        std::vector<bool> reduceAxis(shape_.size(), false);
 
         for (auto x : axes) {
-            if (x < 0) x += shape.size();
-            if (x < 0 || x >= (int)shape.size()) {
+            if (x < 0) x += shape_.size();
+            if (x < 0 || x >= (int)shape_.size()) {
                 throw std::invalid_argument("Axis index out of bounds.");
             }
 
             reduceAxis[x] = true;
         }
         
-        std::vector<size_t> newShape;
-        for (size_t i = 0; i < shape.size(); i++) {
+        Shape newShape;
+        for (size_t i = 0; i < shape_.size(); i++) {
             if (!reduceAxis[i])
-                newShape.push_back(shape[i]);
+                newShape.push_back(shape_[i]);
         }
 
         Tensor res = zeros(newShape);
-        res.sum_helper(*this, reduceAxis, 0, indexOffset, 0, 0);
+        res.sum_helper(*this, reduceAxis, 0, offset_, 0, 0);
         return res;
     }
 
     // Broadcasts first n-2 dimensions
     friend Tensor matmul(const Tensor& a, const Tensor& b) {
         // Prepend 1 to shape of a if 1D
-        Tensor aa = a.shape.size() < 2 ? a.reshape({1, a.shape[0]}) : a;
+        Tensor aa = a.shape_.size() < 2 ? a.reshape({1, a.shape_[0]}) : a;
         // Append 1 to shape of b if 1D
-        Tensor bb = b.shape.size() < 2 ? b.reshape({b.shape[0], 1}) : b;
+        Tensor bb = b.shape_.size() < 2 ? b.reshape({b.shape_[0], 1}) : b;
 
-        if (aa.shape.back() != bb.shape[bb.shape.size() - 2]) {
+        if (aa.shape_.back() != bb.shape_[bb.shape_.size() - 2]) {
             throw std::invalid_argument("Invalid shape for matmul.");
         }
-        std::vector<size_t> shape = broadcast_shape(std::vector<size_t>(aa.shape.begin(), aa.shape.begin() + aa.shape.size() - 2), 
-                                                    std::vector<size_t>(bb.shape.begin(), bb.shape.begin() + bb.shape.size() - 2));
-        shape.push_back(aa.shape[aa.shape.size() - 2]);
-        shape.push_back(bb.shape.back());
+        Shape shape = Shape::broadcast(std::vector<size_t>(aa.shape_.begin(), aa.shape_.begin() + aa.shape_.size() - 2), 
+                                                    std::vector<size_t>(bb.shape_.begin(), bb.shape_.begin() + bb.shape_.size() - 2));
+        shape.push_back(aa.shape_[aa.shape_.size() - 2]);
+        shape.push_back(bb.shape_.back());
 
         Tensor res = zeros(shape);
-        res.matmul_helper(aa, bb, 0, aa.indexOffset, bb.indexOffset, 0);
-        if (a.shape.size() < 2) {
+        res.matmul_helper(aa, bb, 0, aa.offset_, bb.offset_, 0);
+        if (a.shape_.size() < 2) {
             // Remove 1 if a was reshaped
-            assert(res.shape[res.shape.size() - 2] == 1);
-            res.strides.erase(res.strides.end() - 2);
-            res.shape.erase(res.shape.end() - 2);
+            assert(res.shape_[res.shape_.size() - 2] == 1);
+            res.strides_.erase(res.strides_.end() - 2);
+            res.shape_.erase(res.shape_.end() - 2);
         }
-        if (b.shape.size() < 2) {
+        if (b.shape_.size() < 2) {
             // Remove 1 if b was reshaped
-            assert(res.shape.back() == 1);
-            res.strides.pop_back();
-            res.shape.pop_back();
+            assert(res.shape_.back() == 1);
+            res.strides_.pop_back();
+            res.shape_.pop_back();
         }
         return res;
     }
 
     Tensor T() const {
         Tensor res(*this);
-        std::reverse(res.strides.begin(), res.strides.end());
-        std::reverse(res.shape.begin(), res.shape.end());
+        std::reverse(res.strides_.begin(), res.strides_.end());
+        std::reverse(res.shape_.begin(), res.shape_.end());
         return res; // Should do NRVO
     }
 
-    Tensor reshape(const std::vector<size_t>& newShape) const {
+    Tensor reshape(const Shape& newShape) const {
         // Could modify to handle this case if necessary
-        if (shape.size() == 0 || newShape.size() == 0) {
+        if (shape_.size() == 0 || newShape.size() == 0) {
             throw std::invalid_argument("Invalid shape for reshape.");
         }
         size_t size = 1;
-        for (auto dim : shape) {
+        for (auto dim : shape_) {
             size *= dim;
         }
         for (auto dim : newShape) {
@@ -341,7 +413,7 @@ public:
         }
 
         size_t cur = 1;
-        size_t sizeCur = shape[0];
+        size_t sizeCur = shape_[0];
         size_t lNew = 0, rNew = 0;
         size_t sizeNew = 1;
 
@@ -350,10 +422,10 @@ public:
         // Logic is still a little sus but seems to work
         bool full = true;
         while (lNew < newShape.size()) {
-            if (sizeCur < sizeNew && cur < shape.size()) {
-                if (strides[cur - 1] != strides[cur] * shape[cur])
+            if (sizeCur < sizeNew && cur < shape_.size()) {
+                if (strides_[cur - 1] != strides_[cur] * shape_[cur])
                     full = false;
-                sizeCur *= shape[cur++];
+                sizeCur *= shape_[cur++];
             }
             else if (rNew < newShape.size()) {
                 sizeNew *= newShape[rNew++];
@@ -366,46 +438,46 @@ public:
                     return copy().reshape(newShape);
                 }
 
-                int stride = strides[cur - 1];
+                int stride = strides_[cur - 1];
                 for (; lNew < rNew; lNew++) {
                     sizeNew /= newShape[lNew];
                     newStrides.push_back(sizeNew * stride);
                 }
                 assert(sizeNew == 1);
 
-                if (cur == shape.size())
+                if (cur == shape_.size())
                     sizeCur = 1;
                 else
-                    sizeCur = shape[cur++];
+                    sizeCur = shape_[cur++];
                 full = true;
             }
         }
 
         Tensor res(*this);
-        res.strides = newStrides;
-        res.shape = newShape;
+        res.strides_ = newStrides;
+        res.shape_ = newShape;
 
         return res;
     }
 
-    //Cast Tensors with no dimension to scalar, implicit cast for cout/math
+    // Cast Tensors with no dimension to scalar, implicit cast for cout/math
     operator U() const {
-        if (shape.size() > 0) {
+        if (shape_.size() > 0) {
             throw std::invalid_argument("Can't cast tensor to scalar.");
         }
-        return data[indexOffset];
+        return data_[offset_];
     }
 
     // Define << for printing using recursion
     friend std::ostream& operator<<(std::ostream& os, const Tensor& t) {
-        if (t.shape.size() == 0) {
+        if (t.shape_.size() == 0) {
             os << ((U)t);
             return os;
         }
         os << "[";
-        for (size_t i = 0; i < t.shape[0]; i++) {
+        for (size_t i = 0; i < t.shape_[0]; i++) {
             os << t[i];
-            if (i < t.shape[0] - 1)
+            if (i < t.shape_[0] - 1)
                 os << ", ";
         }
         os << "]";
@@ -415,64 +487,136 @@ public:
 
     void print() const {
         std::cout << "(";
-        for (size_t i = 0; i < shape.size(); i++) {
-            std::cout << shape[i];
-            if (i < shape.size() - 1)
+        for (size_t i = 0; i < shape_.size(); i++) {
+            std::cout << shape_[i];
+            if (i < shape_.size() - 1)
                 std::cout << ", ";
         }
         std::cout << "): " << (*this) << std::endl;
     }
 
     void print_shape() const {
-        for (auto dim : shape) {
+        for (auto dim : shape_) {
             std::cout << dim << " ";
         }
         std::cout << std::endl;
     }
 
-    Tensor broadcast_reduce_to(std::vector<size_t> shape) {
+    Tensor broadcast_reduce_to(const Shape& shape) {
         std::vector<int> broadcastedAxes;
-        for (size_t i = 0; i < this->shape.size(); i++) {
-            if (i >= shape.size() || this->shape[this->shape.size() - 1 - i] != shape[shape.size() - 1 - i]) {
-                broadcastedAxes.push_back(this->shape.size() - 1 - i);
+        for (size_t i = 0; i < this->shape_.size(); i++) {
+            if (i >= shape.size() || this->shape_[this->shape_.size() - 1 - i] != shape[shape.size() - 1 - i]) {
+                broadcastedAxes.push_back(this->shape_.size() - 1 - i);
             }
         }
 
         return sum(std::move(broadcastedAxes));
     }
 
-protected:
-    std::shared_ptr<U[]> data;
-    std::vector<size_t> strides;
-    size_t indexOffset = 0;
+    const Shape& shape() const {
+        return shape_;
+    }
 
-    Tensor() {}
+protected:
+    // Should be fixed on construction
+    std::shared_ptr<U[]> data_;
+    Shape shape_;
+    std::vector<size_t> strides_;
+    size_t offset_ = 0;
+
+    Tensor(const Shape& shape) {
+        shape_ = shape;
+
+        size_t totalSize = 1;
+        for (int i = shape.size() - 1; i >= 0; i--) {
+            strides_.push_back(totalSize);
+            totalSize *= shape[i];
+        }
+        reverse(strides_.begin(), strides_.end());
+
+        data_ = std::shared_ptr<U[]>(new U[totalSize]);
+    }
+
+    template <std::size_t... Is, typename... Args>
+    Tensor(const Tensor& orig, std::index_sequence<Is...>, Args&&... args) {
+        data_ = orig.data_;
+        offset_ = orig.offset_;
+        // Fold expression to process all arguments with overloads
+        ((process_get_arg(orig, Is, args)), ...);
+        
+        // Copy remaining dimensions
+        for (size_t i = sizeof...(Args); i < orig.strides_.size(); i++) {
+            strides_.push_back(orig.strides_[i]);
+            shape_.push_back(orig.shape_[i]);
+        }
+    }
+
+    void process_get_arg(const Tensor& orig, std::size_t idx, int x) {
+        if (idx >= orig.shape_.size()) {
+            throw std::invalid_argument("Too many arguments provided for get.");
+        }
+        // Allow Python-style negative indexing
+        if (x < 0) {
+            x += orig.shape_[idx];
+        }
+        if (x >= (int)orig.shape_[idx] || x < 0) {
+            throw std::invalid_argument("Index out of bounds.");
+        }
+        // Add to offset and don't add a range to axisIndices, reducing number of axes
+        offset_ += orig.strides_[idx] * x;
+    }
+
+    void process_get_arg(const Tensor& orig, std::size_t idx, Range range) {
+        if (idx >= orig.strides_.size()) {
+            throw std::invalid_argument("Too many arguments provided for get.");
+        }
+        
+        // Allow Python-style negative indexing
+        if (range.start < 0) {
+            range.start += orig.shape_[idx];
+        }
+        if (range.start < 0 || range.start >= (int)orig.shape_[idx]) {
+            throw std::invalid_argument("Index out of bounds.");
+        }
+
+        // Length of -1 implies index to the end
+        if (range.length == -1) {
+            range.length = range.step > 0 ? (orig.shape_[idx] - range.start + range.step - 1) / range.step : (range.start / -range.step) + 1;
+        }
+        if (range.length <= 0) {
+            throw std::invalid_argument("Negative length.");
+        }
+       
+        shape_.push_back(range.length);
+        strides_.push_back(orig.strides_[idx] * range.step);
+        offset_ += orig.strides_[idx] * range.start;
+    }
 
     // Write element wise op(a, b) into this object
     // Do this to avoid instantiating many intermediate Tensors in our recursion, which causes a lot of data copying
     template <typename Func>
     void apply_binary_helper(const Tensor& a, const Tensor& b, Func op, int index, int aIndex, int bIndex, int axis) {
-        if (axis == (int)shape.size()) {
-            data[index] = op(a.data[aIndex], b.data[bIndex]);
+        if (axis == (int)shape_.size()) {
+            data_[index] = op(a.data_[aIndex], b.data_[bIndex]);
             return;
         }
 
-        int aAxis = axis + a.shape.size() - shape.size();
-        if (aAxis >= 0 && a.shape[aAxis] == 1) {
+        int aAxis = axis + a.shape_.size() - shape_.size();
+        if (aAxis >= 0 && a.shape_[aAxis] == 1) {
             aAxis = -1;
         }
         
-        int bAxis = axis + b.shape.size() - shape.size();
-        if (bAxis >= 0 && b.shape[bAxis] == 1) {
+        int bAxis = axis + b.shape_.size() - shape_.size();
+        if (bAxis >= 0 && b.shape_[bAxis] == 1) {
             bAxis = -1;
         }
 
-        for (size_t i = 0; i < shape[axis]; i++) {
+        for (size_t i = 0; i < shape_[axis]; i++) {
             apply_binary_helper(
                 a, b, op, 
-                index + strides[axis] * i, 
-                aIndex + (aAxis >= 0 ? a.strides[aAxis] * i : 0),
-                bIndex + (bAxis >= 0 ? b.strides[bAxis] * i : 0),
+                index + strides_[axis] * i, 
+                aIndex + (aAxis >= 0 ? a.strides_[aAxis] * i : 0),
+                bIndex + (bAxis >= 0 ? b.strides_[bAxis] * i : 0),
                 axis + 1
             );
         }
@@ -482,21 +626,21 @@ protected:
     // Do this to avoid instantiating many intermediate Tensors in our recursion, which causes a lot of data copying
     template <typename Func>
     void apply_binary_inplace_helper(const Tensor& other, Func op, int index, int otherIndex, int axis) {
-        if (axis == (int)shape.size()) {
-            op(data[index], other.data[otherIndex]);
+        if (axis == (int)shape_.size()) {
+            op(data_[index], other.data_[otherIndex]);
             return;
         }
         
-        int otherAxis = axis + other.shape.size() - shape.size();
-        if (otherAxis >= 0 && other.shape[otherAxis] == 1) {
+        int otherAxis = axis + other.shape_.size() - shape_.size();
+        if (otherAxis >= 0 && other.shape_[otherAxis] == 1) {
             otherAxis = -1;
         }
 
-        for (size_t i = 0; i < shape[axis]; i++) {
+        for (size_t i = 0; i < shape_[axis]; i++) {
             apply_binary_inplace_helper(
                 other, op, 
-                index + strides[axis] * i, 
-                otherIndex + (otherAxis >= 0 ? other.strides[otherAxis] * i : 0),
+                index + strides_[axis] * i, 
+                otherIndex + (otherAxis >= 0 ? other.strides_[otherAxis] * i : 0),
                 axis + 1
             );
         }
@@ -505,110 +649,83 @@ protected:
     // Apply op elementwise to other and copy into this. Guaranteed that this tensor and other are the same shape
     template <typename Func>
     void apply_unary_helper(const Tensor& other, Func op, int index, int otherIndex, int axis) {
-        if (axis == shape.size()) {
-            data[index] = op(other.data[otherIndex]);
+        if (axis == (int)shape_.size()) {
+            data_[index] = op(other.data_[otherIndex]);
             return;
         }
 
-        for (size_t i = 0; i < shape[axis]; i++) {
-            apply_unary_helper(other, op, index + strides[axis] * i, otherIndex + other.strides[axis] * i, axis + 1);
+        for (size_t i = 0; i < shape_[axis]; i++) {
+            apply_unary_helper(other, op, index + strides_[axis] * i, otherIndex + other.strides_[axis] * i, axis + 1);
         }
     }
 
     // Apply elementwise
     template <typename Func>
     void apply_unary_inplace_helper(Func op, int index, int axis) {
-        if (axis == (int)shape.size()) {
-            op(data[index]);
+        if (axis == (int)shape_.size()) {
+            op(data_[index]);
             return;
         }
 
-        for (size_t i = 0; i < shape[axis]; i++) {
-            apply_unary_inplace_helper(op, index + strides[axis] * i, axis + 1);
+        for (size_t i = 0; i < shape_[axis]; i++) {
+            apply_unary_inplace_helper(op, index + strides_[axis] * i, axis + 1);
         }
     }
 
     void matmul_helper(const Tensor& a, const Tensor& b, int index, int aIndex, int bIndex, int axis) {
-        int aAxis = axis + a.shape.size() - shape.size();
-        int bAxis = axis + b.shape.size() - shape.size();
+        int aAxis = axis + a.shape_.size() - shape_.size();
+        int bAxis = axis + b.shape_.size() - shape_.size();
         
-        if (axis == (int)shape.size() - 2) {
+        if (axis == (int)shape_.size() - 2) {
             // Actual matmul here
-            for (size_t i = 0; i < shape[axis]; i++) {
-                for (size_t j = 0; j < shape[axis + 1]; j++) {
-                    for (size_t k = 0; k < a.shape[aAxis + 1]; k++) {
-                        data[index + strides[axis] * i + strides[axis + 1] * j] += 
-                            a.data[aIndex + a.strides[aAxis] * i + a.strides[aAxis + 1] * k] * 
-                            b.data[bIndex + b.strides[bAxis] * k + b.strides[bAxis + 1] * j];
+            for (size_t i = 0; i < shape_[axis]; i++) {
+                for (size_t j = 0; j < shape_[axis + 1]; j++) {
+                    for (size_t k = 0; k < a.shape_[aAxis + 1]; k++) {
+                        data_[index + strides_[axis] * i + strides_[axis + 1] * j] += 
+                            a.data_[aIndex + a.strides_[aAxis] * i + a.strides_[aAxis + 1] * k] * 
+                            b.data_[bIndex + b.strides_[bAxis] * k + b.strides_[bAxis + 1] * j];
                     }
                 }
             }
             return;
         }
 
-        if (aAxis >= 0 && a.shape[aAxis] == 1) {
+        if (aAxis >= 0 && a.shape_[aAxis] == 1) {
             aAxis = -1;
         }
 
-        if (bAxis >= 0 && b.shape[bAxis] == 1) {
+        if (bAxis >= 0 && b.shape_[bAxis] == 1) {
             bAxis = -1;
         }
 
-        for (size_t i = 0; i < shape[axis]; i++) {
+        for (size_t i = 0; i < shape_[axis]; i++) {
             matmul_helper(
                 a, b, 
-                index + strides[axis] * i, 
-                aIndex + (aAxis >= 0 ? a.strides[aAxis] * i : 0),
-                bIndex + (bAxis >= 0 ? b.strides[bAxis] * i : 0),
+                index + strides_[axis] * i, 
+                aIndex + (aAxis >= 0 ? a.strides_[aAxis] * i : 0),
+                bIndex + (bAxis >= 0 ? b.strides_[bAxis] * i : 0),
                 axis + 1
             );
         }
     }
 
     void sum_helper(const Tensor& other, const std::vector<bool>& reduceAxis, int index, int otherIndex, int axis, int otherAxis) const {
-        if (otherAxis == (int)other.shape.size()) {
-            data[index] += other.data[otherIndex];
+        if (otherAxis == (int)other.shape_.size()) {
+            data_[index] += other.data_[otherIndex];
             return;
         }        
 
         if (reduceAxis[otherAxis]) {
-            for (size_t i = 0; i < other.shape[otherAxis]; i++) {
-                sum_helper(other, reduceAxis, index, otherIndex + other.strides[otherAxis] * i, axis, otherAxis + 1);
+            for (size_t i = 0; i < other.shape_[otherAxis]; i++) {
+                sum_helper(other, reduceAxis, index, otherIndex + other.strides_[otherAxis] * i, axis, otherAxis + 1);
             }
         }
         else {
-            assert(shape[axis] == other.shape[otherAxis]);
-            for (size_t i = 0; i < other.shape[otherAxis]; i++) {
-                sum_helper(other, reduceAxis, index + strides[axis] * i, otherIndex + other.strides[otherAxis] * i, axis + 1, otherAxis + 1);
+            assert(shape_[axis] == other.shape_[otherAxis]);
+            for (size_t i = 0; i < other.shape_[otherAxis]; i++) {
+                sum_helper(other, reduceAxis, index + strides_[axis] * i, otherIndex + other.strides_[otherAxis] * i, axis + 1, otherAxis + 1);
             }
         }
-    }
-
-    static std::vector<size_t> broadcast_shape(const std::vector<size_t>& a, const std::vector<size_t>& b) {
-        std::vector<size_t> res;
-        for (size_t i = 0; i < std::max(a.size(), b.size()); i++) {
-            if (i >= a.size()) {
-                res.push_back(b[b.size() - 1 - i]);
-            }
-            else if (i >= b.size()) {
-                res.push_back(a[a.size() - 1 - i]);
-            }
-            else if (a[a.size() - 1 - i] == 1) {
-                res.push_back(b[b.size() - 1 - i]);
-            }
-            else if (b[b.size() - 1 - i] == 1) {
-                res.push_back(a[a.size() - 1 - i]);
-            }
-            else if (a[a.size() - 1 - i] == b[b.size() - 1 - i]) {
-                res.push_back(a[a.size() - 1 - i]);
-            }
-            else {
-                throw std::invalid_argument("Broadcast failed.");
-                //return {};
-            }
-        }
-        reverse(res.begin(), res.end());
-        return res;
     }
 };
 
@@ -631,83 +748,6 @@ template <typename U>
 Tensor<U> operator/(U a, const Tensor<U>& b) {
     return b.apply_unary([a](U b) { return a / b; });
 }
-
-// Almost all Tensor operations should return TensorProxy, but it seems to break something and it doesn't seem important enough to fix
-template <typename U>
-class TensorProxy : public Tensor<U> {
-public:
-    using Tensor<U>::shape;
-
-    template <std::size_t... Is, typename... Args>
-    TensorProxy(const Tensor<U>& orig, std::index_sequence<Is...>, Args&&... args) {
-        data = orig.data;
-        indexOffset = orig.indexOffset;
-        // Fold expression to process all arguments with overloads
-        ((process_get_arg(orig, Is, args)), ...);
-        
-        // Copy remaining dimensions
-        for (size_t i = sizeof...(Args); i < orig.strides.size(); i++) {
-            strides.push_back(orig.strides[i]);
-            shape.push_back(orig.shape[i]);
-        }
-    }
-
-    TensorProxy& operator=(U other) {
-        Tensor<U>::apply_unary_inplace([other](U& a) { a = other; });
-        return *this;
-    }
-
-    TensorProxy& operator=(const Tensor<U>& other) {
-        Tensor<U>::apply_binary_inplace(other, [](U& a, U b) { a = b; });
-        return *this;
-    }
-
-protected:
-    using Tensor<U>::data;
-    using Tensor<U>::strides;
-    using Tensor<U>::indexOffset;
-
-    void process_get_arg(const Tensor<U>& orig, std::size_t idx, int x) {
-        if (idx >= orig.shape.size()) {
-            throw std::invalid_argument("Too many arguments provided for get.");
-        }
-        // Allow Python-style negative indexing
-        if (x < 0) {
-            x += orig.shape[idx];
-        }
-        if (x >= (int)orig.shape[idx] || x < 0) {
-            throw std::invalid_argument("Index out of bounds.");
-        }
-        // Add to indexOffset and don't add a range to axisIndices, reducing number of axes
-        indexOffset += orig.strides[idx] * x;
-    }
-
-    void process_get_arg(const Tensor<U>& orig, std::size_t idx, Range range) {
-        if (idx >= orig.strides.size()) {
-            throw std::invalid_argument("Too many arguments provided for get.");
-        }
-        
-        // Allow Python-style negative indexing
-        if (range.start < 0) {
-            range.start += orig.shape[idx];
-        }
-        if (range.start < 0 || range.start >= (int)orig.shape[idx]) {
-            throw std::invalid_argument("Index out of bounds.");
-        }
-
-        // Length of -1 implies index to the end
-        if (range.length == -1) {
-            range.length = range.step > 0 ? (orig.shape[idx] - range.start + range.step - 1) / range.step : (range.start / -range.step) + 1;
-        }
-        if (range.length <= 0) {
-            throw std::invalid_argument("Negative length.");
-        }
-       
-        shape.push_back(range.length);
-        strides.push_back(orig.strides[idx] * range.step);
-        indexOffset += orig.strides[idx] * range.start;
-    }
-};
 
 } // namespace linalg
 

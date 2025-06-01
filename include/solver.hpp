@@ -8,31 +8,32 @@ namespace solver {
 template <typename T>
 class Optimizer {
 public:
-    Optimizer(Module module) {
-        //TODO: do some kind of recursion to get all weights?
+    Optimizer(const std::vector<Expression<T>>& weights) {
+        weights_ = weights;
     }
 
-    virtual void step();
+    virtual void step() = 0;
 
 protected:
-    std::vector<Expression<T>> weights;
+    std::vector<Expression<T>> weights_;
 };
 
 template <typename T>
 class GradientDescent : public Optimizer<T> {
 public:
-    GradientDescent(float learningRate) : learningRate(learningRate) {
+    GradientDescent(const std::vector<Expression<T>>& weights, float learningRate) : Optimizer<T>(weights), learningRate(learningRate) {
 
     }
 
     void step() override {
-        for (auto& expr : weights) {
-            expr.value() += learningRate * expr.grad();
+        for (auto& expr : weights_) {
+            if (expr.grad)
+                expr.value += learningRate * (*expr.grad);
         }
     }
 
 protected:
-    using Optimizer<T>::weights;
+    using Optimizer<T>::weights_;
 
     float learningRate;
 };
@@ -40,13 +41,13 @@ protected:
 
 /* Loss Functions */
 
-class LossFunction {
+// class LossFunction {
 
-};
+// };
 
-class MSE : public LossFunction {
+// class MSE : public LossFunction {
 
-};
+// };
 
 } // namespace solver
 
