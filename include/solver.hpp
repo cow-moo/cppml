@@ -14,7 +14,7 @@ public:
 
     void zero_grad() {
         for (auto &w : weights_) {
-            (*w.grad) = 0;
+            w.grad() = 0;
         }
     }
 
@@ -32,8 +32,8 @@ public:
 
     void step() override {
         for (auto& expr : weights_) {
-            if (expr.grad)
-                expr.value -= learningRate_ * (*expr.grad);
+            if (expr.requires_grad())
+                expr.value() -= learningRate_ * expr.grad();
         }
     }
 

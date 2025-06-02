@@ -37,7 +37,22 @@ public:
         }
         return res;
     }
-protected:
+
+    Expression<T> register_weight(const Tensor<T>& val, std::string name="unnamed") {
+        assert(graph_);
+        weights_.push_back(Expression(val, graph_.get(), name));
+        return weights_.back();
+    }
+
+    template <typename ModuleType, typename... Args>
+    std::shared_ptr<ModuleType> register_module(Args&&... args) {
+        assert(graph_);
+        auto m = std::make_shared<ModuleType>(std::forward<Args>(args)..., graph_);
+        submodules_.push_back(m);
+        return m;
+    }
+
+private:
     std::vector<Expression<T>> weights_;
     std::vector<std::shared_ptr<Module<T>>> submodules_;
     std::shared_ptr<ComputationGraph> graph_;
@@ -47,34 +62,34 @@ template <typename T = float>
 class Linear : public Module<T> {
 public:
     Linear(size_t inputDim, size_t outputDim, std::shared_ptr<ComputationGraph> graph=nullptr) : Module<T>(graph) {
-        weights_.push_back(Expression(Tensor<T>::normal({inputDim, outputDim}, 0, sqrt(1 / inputDim)), graph_.get(), "W"));
-        weights_.push_back(Expression(Tensor<T>::zeros({outputDim}), graph_.get(), "b"));
+        W = this->register_weight(Tensor<T>::normal({inputDim, outputDim}, 0, sqrt(1 / inputDim)), "W");
+        b = this->register_weight(Tensor<T>::zeros({outputDim}), "b");
     }
 
     Expression<T> forward(const Expression<T>& input) override {
-        return matmul(input, weights_[0]) + weights_[1];
+        return matmul(input, W) + b;
     }
-protected:
-    using Module<T>::weights_;
-    using Module<T>::submodules_;
-    using Module<T>::graph_;
+
+private:
+    Expression<T> W;
+    Expression<T> b;
 };
 
 template <typename T = float>
 class LinearReLU : public Module<T> {
 public:
     LinearReLU(size_t inputDim, size_t outputDim, std::shared_ptr<ComputationGraph> graph=nullptr) : Module<T>(graph) {
-        weights_.push_back(Expression(Tensor<T>::normal({inputDim, outputDim}, 0, sqrt(2 / inputDim)), graph_.get(), "W"));
-        weights_.push_back(Expression(Tensor<T>::zeros({outputDim}), graph_.get(), "b"));
+        W = this->register_weight(Tensor<T>::normal({inputDim, outputDim}, 0, sqrt(2 / inputDim)), "W");
+        b = this->register_weight(Tensor<T>::zeros({outputDim}), "b");
     }
 
     Expression<T> forward(const Expression<T>& input) override {
-        return relu(matmul(input, weights_[0]) + weights_[1]);
+        return relu(matmul(input, W) + b);
     }
-protected:
-    using Module<T>::weights_;
-    using Module<T>::submodules_;
-    using Module<T>::graph_;
+
+private:    
+    Expression<T> W;
+    Expression<T> b;
 };
 
 } // namespace module

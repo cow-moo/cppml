@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 add_executable(main 
     main.cpp
+    src/dataloader.cpp
 )
 
 include_directories(${CMAKE_SOURCE_DIR}/include)

@@ -3,6 +3,7 @@
 #include "autodiff.hpp"
 #include "module.hpp"
 #include "solver.hpp"
+#include "dataloader.hpp"
 
 using linalg::Tensor;
 using linalg::Range;
@@ -87,8 +88,8 @@ void test_autodiff_add() {
     //sum.value.print();
 
     sum.backward();
-    assert((*a.grad)[0] == 1);
-    assert((*b.grad)[0] == 3);
+    assert(a.grad()[0] == 1);
+    assert(b.grad()[0] == 3);
     //a.grad->print();
     //b.grad->print();
 }
@@ -119,11 +120,11 @@ void test_autodiff_mul() {
     // ∂loss/∂a = b = [5, 5, 5]
     // ∂loss/∂b = sum(a) = 6 → because b was broadcast
 
-    assert((*a.grad)[0] == 5);
-    assert((*a.grad)[1] == 5);
-    assert((*a.grad)[2] == 5);
+    assert(a.grad()[0] == 5);
+    assert(a.grad()[1] == 5);
+    assert(a.grad()[2] == 5);
 
-    assert((*b.grad)[0] == 6);
+    assert(b.grad()[0] == 6);
 }
 
 void test_autodiff_deep_graph() {
@@ -162,12 +163,12 @@ void test_autodiff_deep_graph() {
     // std::cout << "d" << std::endl;
     // d.print();
 
-    assert((*a.grad)[0] == 3);
-    assert((*a.grad)[1] == 3);
-    assert((*a.grad)[2] == 3);
+    assert(a.grad()[0] == 3);
+    assert(a.grad()[1] == 3);
+    assert(a.grad()[2] == 3);
 
-    assert((*b.grad)[0] == 9);
-    assert((*c.grad)[0] == 12);
+    assert(b.grad()[0] == 9);
+    assert(c.grad()[0] == 12);
 }
 
 void test_range_indexing() {
@@ -212,25 +213,86 @@ void run_tests() {
 template <typename T>
 Expression<T> mse_loss(const Expression<T>& a, const Expression<T>& b) {
     Expression<T> diff = a - b;
-    return sum(diff * diff) / diff.value.numel();
+    return sum(diff * diff) / diff.value().numel();
 }
 
 class MLP : public module::Module<float> {
 public:
     MLP() {
-        submodules_.push_back(std::make_shared<module::LinearReLU<float>>(1, 8, graph_));
-        submodules_.push_back(std::make_shared<module::Linear<float>>(8, 1, graph_));
+        l1 = register_module<module::LinearReLU<float>>(1, 8);
+        l2 = register_module<module::Linear<float>>(8, 1);
     }
 
     Expression<float> forward(const Expression<float>& input) override {
-        return submodules_[1]->forward(submodules_[0]->forward(input));
+        return l2->forward(l1->forward(input));
     }
 
-protected:
-    using Module<float>::weights_;
-    using Module<float>::submodules_;
-    using Module<float>::graph_;
+private:
+    std::shared_ptr<module::LinearReLU<float>> l1;
+    std::shared_ptr<module::Linear<float>> l2;
 };
+
+void linreg() {
+    Tensor<> x = {0, 1, 2, 3, 4};
+    x.assign(x.reshape({5, 1}));
+
+    Tensor<> y = {3, 5, 7, 9, 11};
+    y.assign(y.reshape({5, 1}));
+
+    module::LinearReLU<> linear(1, 1);
+    solver::GradientDescent gd(linear.weights(), 0.1);
+
+    for (int epoch = 0; epoch < 100; epoch++) {
+        auto yPred = linear(x);
+        auto loss = mse_loss(yPred, Expression<>(y));
+        loss.backward();
+        gd.step();
+        gd.zero_grad();
+        loss.value().print();
+        yPred.value().print();
+    }
+    
+    for (auto &w : linear.weights()) {
+        w.print();
+    }
+}
+
+void quadreg() {
+    Tensor<> x = Tensor<>::zeros({100, 1});
+    Tensor<> y = Tensor<>::zeros({100, 1});
+    for (int i = 0; i < 100; ++i) {
+        float v = -1.0f + 2.0f * i / 99;
+        x[i][0] = v;
+        y[i][0] = v * v;
+    }
+
+    // x[Range(5)].print();
+    // y[Range(5)].print();
+
+    MLP model;
+    solver::GradientDescent gd(model.weights(), 0.01);
+
+    for (int epoch = 0; epoch < 1000; epoch++) {
+        auto yPred = model(x);
+        auto loss = mse_loss(yPred, Expression<>(y));
+        loss.backward();
+        gd.step();
+        gd.zero_grad();
+        if (epoch % 100 == 0)
+            loss.value().print();
+        //yPred.value.print();
+    }
+    mse_loss(model(x), Expression<>(y)).print();
+
+    std::cout << "y pred" << std::endl;
+    (model(x).value() - y).print();
+    //std::cout << "y" << std::endl;
+    //y.print();
+    
+    for (auto &w : model.weights()) {
+        w.value().print();
+    }
+}
 
 int main() {
     //run_tests();
@@ -264,64 +326,23 @@ int main() {
     //     w.print();
     // }
 
-    // Tensor<> x = {0, 1, 2, 3, 4};
-    // x.assign(x.reshape({5, 1}));
+    quadreg();
 
-    // Tensor<> y = {3, 5, 7, 9, 11};
-    // y.assign(y.reshape({5, 1}));
-
-    // module::LinearReLU<> linear(1, 1);
-    // solver::GradientDescent gd(linear.weights(), 0.1);
-
-    // for (int epoch = 0; epoch < 100; epoch++) {
-    //     auto yPred = linear(x);
-    //     auto loss = mse_loss(yPred, Expression<>(y));
-    //     loss.backward();
-    //     gd.step();
-    //     gd.zero_grad();
-    //     loss.value.print();
-    //     yPred.value.print();
-    // }
+    // MNISTDataset train;
+    // assert(train.load_images("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte"));
+    // assert(train.load_labels("../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte"));
     
-    // for (auto &w : linear.weights()) {
-    //     w.print();
+    // for (int i = 0; i < 10; i++) {
+    //     auto [img, label] = train.get(i);
+    //     img.assign(img.reshape({28, 28}));
+    //     std::cout << "Label: " << ((int)label) << std::endl;
+    //     for (int i = 0; i < 28; i++) {
+    //         for (int j = 0; j < 28; j++) {
+    //             std::cout << (img[i][j] < 0.5 ? '.' : '@');
+    //         }
+    //         std::cout << std::endl;
+    //     }
     // }
-
-    Tensor<> x = Tensor<>::zeros({100, 1});
-    Tensor<> y = Tensor<>::zeros({100, 1});
-    for (int i = 0; i < 100; ++i) {
-        float v = -1.0f + 2.0f * i / 99;
-        x[i][0] = v;
-        y[i][0] = v * v;
-    }
-
-    // x[Range(5)].print();
-    // y[Range(5)].print();
-
-    MLP model;
-    solver::GradientDescent gd(model.weights(), 0.01);
-
-    for (int epoch = 0; epoch < 1000; epoch++) {
-        auto yPred = model(x);
-        auto loss = mse_loss(yPred, Expression<>(y));
-        loss.backward();
-        gd.step();
-        gd.zero_grad();
-        if (epoch % 100 == 0)
-            loss.value.print();
-        //yPred.value.print();
-    }
-    mse_loss(model(x), Expression<>(y)).print();
-
-    std::cout << "y pred" << std::endl;
-    (model(x).value - y).print();
-    //std::cout << "y" << std::endl;
-    //y.print();
-    
-    for (auto &w : model.weights()) {
-        w.value.print();
-    }
-
     return 0;
 }
 
