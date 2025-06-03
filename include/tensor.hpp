@@ -133,17 +133,23 @@ public:
     // Variadic template access operator
     template <typename... Args>
     Tensor operator[](Args&&... args) const {
+        return at(std::forward<Args>(args)...);
+    }
+
+    // Needed due to clang issues with perfect forwarding into operator[]
+    template <typename... Args>
+    Tensor at(Args&&... args) const {
         return Tensor(*this, std::index_sequence_for<Args...>{}, std::forward<Args>(args)...);
     }
 
     // Apply some elementwise operation on two tensors with broadcasting
-    // Func should have some signature op(U, U) -> U
+    // Func should have some signature op(U, V) -> R
     // Consider using template <auto op> with constexpr op instead of passing as parameter
-    template <typename Func>
-    Tensor apply_binary(const Tensor& other, Func op) const {
+    template <typename R = U, typename V = U, typename Func>
+    Tensor<R> apply_binary(const Tensor<V>& other, Func op) const {
         Shape shape = Shape::broadcast(this->shape_, other.shape_);
 
-        Tensor res = zeros(shape);
+        Tensor<R> res = Tensor<R>::zeros(shape);
         res.apply_binary_helper((*this), other, op, 0, offset_, other.offset_, 0);
         return res;
     }
@@ -163,10 +169,10 @@ public:
     }
 
     // Apply some operation on some tensor, returning a new one
-    // Func should have signature op(U) -> U
-    template <typename Func>
-    Tensor apply_unary(Func op) const {
-        Tensor res = zeros(shape_);
+    // Func should have signature op(U) -> R
+    template <typename R = U, typename Func>
+    Tensor<R> apply_unary(Func op) const {
+        Tensor<R> res = Tensor<R>::zeros(shape_);
         res.apply_unary_helper(*this, op, 0, offset_, 0);
         return res;
     }
@@ -263,7 +269,11 @@ public:
         return apply_unary([](U a) { return std::log(a); });
     }
 
-    // Allows duplicates and ignores them
+    Tensor<bool> operator==(const Tensor& other) const {
+        return apply_binary<bool>(other, [](U a, U b) { return a == b; });
+    }
+
+    // Allows duplicate axes and ignores them
     template <typename Func>
     Tensor reduce(const std::vector<int>& axes, U identity, Func op) const {
         if (axes.size() == 0)
@@ -306,6 +316,32 @@ public:
     Tensor max(const std::vector<int>& axes) const {
         return reduce(axes, std::numeric_limits<U>::lowest(), 
                       [](U a, U b) { return std::max(a, b); });
+    }
+
+    // Argmaxes over last axis
+    Tensor<size_t> argmax() const {
+        assert(shape_.size() > 0);
+
+        size_t outer = numel() / shape_.back();
+        Tensor reshaped = reshape({outer, shape_.back()});
+        Tensor<size_t> res(Tensor<size_t>::zeros({outer}));
+
+        for (size_t i = 0; i < outer; i++) {
+            size_t maxIdx = 0;
+            U maxVal = reshaped[i, 0];
+            for (size_t j = 1; j < shape_.back(); j++) {
+                U val = reshaped[i, j];
+                if (val > maxVal) {
+                    maxIdx = j;
+                    maxVal = val;
+                }
+            }
+            res[i] = maxIdx;
+        }
+
+        Shape newShape = shape_;
+        newShape.pop_back();
+        return res.reshape(newShape);
     }
 
     // Broadcasts first n-2 dimensions
@@ -351,9 +387,9 @@ public:
     }
 
     Tensor log_softmax() const {
-        Tensor mmax = max({-1}).unsqueeze(shape().size() - 1);
-        Tensor sum = ((*this) - mmax).exp().sum({-1}).unsqueeze(shape().size() - 1);
-        return (*this) - sum.log() + mmax;
+        Tensor normalized = (*this) - max({-1}).unsqueeze(shape().size() - 1);
+        Tensor sum = normalized.exp().sum({-1}).unsqueeze(shape().size() - 1);
+        return normalized - sum.log();
     }
 
     Tensor T() const {
@@ -446,12 +482,17 @@ public:
         return reshape(newShape);
     }
 
-    size_t numel() {
+    size_t numel() const {
         size_t res = 1;
         for (auto x : shape_) {
             res *= x;
         }
         return res;
+    }
+
+    template <typename R>
+    Tensor<R> astype() const {
+        return apply_unary<R>([](U a) { return R(a); });
     }
 
     // Cast Tensors with no dimension to scalar, implicit cast for cout/math
@@ -519,6 +560,9 @@ protected:
     std::vector<size_t> strides_;
     size_t offset_ = 0;
 
+    template <typename>
+    friend class Tensor;
+
     template <std::size_t... Is, typename... Args>
     Tensor(const Tensor& orig, std::index_sequence<Is...>, Args&&... args) {
         data_ = orig.data_;
@@ -576,8 +620,8 @@ protected:
 
     // Write element wise op(a, b) into this object
     // Do this to avoid instantiating many intermediate Tensors in our recursion, which causes a lot of data copying
-    template <typename Func>
-    void apply_binary_helper(const Tensor& a, const Tensor& b, Func op, int index, int aIndex, int bIndex, int axis) {
+    template <typename T1, typename T2, typename Func>
+    void apply_binary_helper(const Tensor<T1>& a, const Tensor<T2>& b, Func op, int index, int aIndex, int bIndex, int axis) {
         if (axis == (int)shape_.size()) {
             data_[index] = op(a.data_[aIndex], b.data_[bIndex]);
             return;
@@ -629,8 +673,8 @@ protected:
     }
 
     // Apply op elementwise to other and copy into this. Guaranteed that this tensor and other are the same shape
-    template <typename Func>
-    void apply_unary_helper(const Tensor& other, Func op, int index, int otherIndex, int axis) {
+    template <typename V, typename Func>
+    void apply_unary_helper(const Tensor<V>& other, Func op, int index, int otherIndex, int axis) {
         if (axis == (int)shape_.size()) {
             data_[index] = op(other.data_[otherIndex]);
             return;

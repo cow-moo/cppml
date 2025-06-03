@@ -43,17 +43,6 @@ protected:
     float learningRate_;
 };
 
-
-/* Loss Functions */
-
-// class LossFunction {
-
-// };
-
-// class MSE : public LossFunction {
-
-// };
-
 } // namespace solver
 
 #endif // SOLVER_H

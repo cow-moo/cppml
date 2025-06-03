@@ -16,8 +16,8 @@ struct Shape {
     operator const std::vector<size_t>&() const { return data; }
 
     // Forward vector methods
-    auto front() { return data.front(); }
-    auto back() { return data.back(); }
+    auto front() const { return data.front(); }
+    auto back() const { return data.back(); }
 
     auto begin() { return data.begin(); }
     auto end() { return data.end(); }
@@ -74,6 +74,7 @@ struct Shape {
                 res.push_back(a[a.size() - 1 - i]);
             }
             else {
+                std::cout << a << " " << b << std::endl;
                 throw std::invalid_argument("Broadcast failed.");
             }
         }

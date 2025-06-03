@@ -67,7 +67,7 @@ void test_matmul() {
 void test_autodiff_add() {
     ComputationGraph graph;
 
-    Expression<> a({1, 2, 3}, &graph), b({5}, &graph);
+    Expression<> a({1, 2, 3}, "a", &graph), b({5}, "b", &graph);
     // a.value.print();
     // b.value.print();
 
@@ -100,8 +100,8 @@ void test_autodiff_mul() {
 
     // a: shape [3]
     // b: shape [1] → broadcasted to match a
-    autodiff::Expression<> a({1, 2, 3}, &graph);
-    autodiff::Expression<> b({5}, &graph);
+    autodiff::Expression<> a({1, 2, 3}, "a", &graph);
+    autodiff::Expression<> b({5}, "b", &graph);
 
     // c: elementwise multiplication, shape [3]
     autodiff::Expression<> c = a * b;
@@ -298,10 +298,36 @@ void mnist_mlp() {
 
     dataloader::DataLoader<float> dl(train.images, y, 64);
 
+    dataloader::MNISTDataset test;
+    assert(test.load_images("../datasets/mnist/t10k-images-idx3-ubyte/t10k-images-idx3-ubyte"));
+    assert(test.load_labels("../datasets/mnist/t10k-labels-idx1-ubyte/t10k-labels-idx1-ubyte"));
+
+    Tensor<float> xTest(Shape({test.images.size(), 784}));
+    Tensor<size_t> yTest(Shape({test.images.size()}));
+
+    for (size_t i = 0; i < test.images.size(); i++) {
+        xTest[i] = test.images[i];
+        yTest[i] = test.labels[i];
+    }
+
     module::MLP<float> model({784, 128, 64, 10});
-    solver::GradientDescent gd(model.weights(), 0.001);
+    auto weights = model.weights();
+
+    solver::GradientDescent gd(weights, 0.1);
 
     std::cout << "Ready" << std::endl;
+
+    // auto it = dl.begin();
+    // auto [xBatch, yBatch] = *it;
+
+    // auto logits = model(xBatch);
+    // auto loss = loss::cross_entropy_logits(logits, yBatch);
+
+    // loss.backward();
+
+    Tensor<size_t> yPred = model(xTest).value().argmax();
+    int correct = (yPred == yTest).astype<int>().sum();
+    std::cout << "Test accuracy: " << correct << " / " << test.images.size() << " = " << ((float)correct / test.images.size()) << std::endl;
 
     for (int epoch = 0; epoch < 10; epoch++) {
         float totalLoss = 0.0f;
@@ -315,58 +341,73 @@ void mnist_mlp() {
             gd.step();
             gd.zero_grad();
             //yPred.value.print();
+            dl.shuffle();
         }
-        std::cout << totalLoss / cnt << std::endl;
+        std::cout << "Average epoch training loss: " << totalLoss / cnt << std::endl;
+
+        Tensor<size_t> yPred = model(xTest).value().argmax();
+        int correct = (yPred == yTest).astype<int>().sum();
+        std::cout << "Test accuracy: " << correct << " / " << test.images.size() << " = " << ((float)correct / test.images.size()) << std::endl;
     }
-    //loss::mse(model(x), Expression<>(y)).print();
-    
-    // for (auto &w : model.weights()) {
-    //     w.value().print();
+
+    // for (auto &w : weights) {
+    //     w[Range(5)].print();
     // }
+}
+
+void print_img(const Tensor<float>& img) {
+    for (int i = 0; i < 28; i++) {
+        for (int j = 0; j < 28; j++) {
+            std::cout << (img[i * 28 + j] < 0.5 ? '.' : '@') << ' ';
+        }
+        std::cout << std::endl;
+    }
 }
 
 int main() {
     //run_tests();
 
-    // Tensor<> a({1, 2, 3});
-    // Tensor<> b = a;
-    // matmul(a, b).print();
-
-    // Tensor<> a = Tensor<>::normal({6, 3, 5});
-    // a.T().print();
-    // Tensor<> b = Tensor<>::normal({5});
-    // matmul(a, b).print();
-
-    // module::Linear<> linear(5, 8);
-    // solver::GradientDescent gd(linear.weights(), 1);
-    // auto res = linear.forward({{{1, 2, 3, 4, 5}}});
-    // auto loss = mse_loss(res, Expression<>(Tensor<>::zeros(res.shape())));
-    // loss.backward();
-    // // res = res.sum();
-    // // res.backward();
-
-    // res.print();
-    // loss.print();
-    // for (auto &w : linear.weights()) {
-    //     w.print();
-    // }
-
-    // gd.step();
-
-    // for (auto &w : linear.weights()) {
-    //     w.print();
-    // }
-
     //quadreg();
+
+    // dataloader::MNISTDataset train;
+    // assert(train.load_images("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte"));
+    // assert(train.load_labels("../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte"));
+
+    // std::vector<Tensor<float>> y;
+    // for (uint8_t label : train.labels) {
+    //     y.emplace_back(Tensor<float>::zeros({10}));
+    //     y.back()[label] = 1.0f;
+    // }
+
+    // dataloader::DataLoader<float> dl(train.images, y, 64);
+
+    // auto it = dl.begin();
+    // auto [xBatch, yBatch] = *it;
+    // print_img(xBatch[5]);
+    // yBatch[5].print();
+
+    //Expression<> expr({{1, 1, 1}, {2, 2, 2}});
+    //expr = expr.log_softmax();
+    //expr.print();
+
+    // Tensor<> t({{1, 1, 5}, {0.1, 2, 2}});
+    // t.softmax().log().print();
+    // t.log_softmax().print();
 
     mnist_mlp();
 
-    //Tensor<> a({{1, 5, 3}, {4, 2, 6}});
-    // a.max({0}).print();
-    // a.max({1}).print();
+    // Tensor<> t = Tensor<>::normal({2, 3, 3});
+    // t.print();
+    // t.argmax().print();
 
-    //a.unsqueeze(a.shape().size()).print();
-    //a.softmax().print();
+    // Tensor<> a({{1, 2, 3}, {4, 5, 6}});
+    // Tensor<> b({{1, 2, 3}, {4, 5, 6}});
+
+    // std::vector<Tensor<>> v = {a, b};
+
+    // Tensor<bool> res = a == b;
+    // res.sum({1}).print();
+    // res.astype<int>().sum({1}).print();
 
     return 0;
 }
@@ -374,17 +415,6 @@ int main() {
 // class TwoLayerNet : public Model {
 //     TwoLayerNet(Tensor)
 // };
-
-// int main() {
-//     linalg::Tensor<> a({1, 2, 3});
-//     linalg::Tensor<> b({5});
-//     //linalg::Tensor<> c = a + b;
-//     (a + b).print();
-//     // A a;
-//     // a.test();
-//     // models::Sequential twoLayerNet(3, {layers::Linear(8), layers::ReLU(), layers::Linear(1)}, solver::GradientDescent(0.01), solver::MSE());
-//     // twoLayerNet.fit();
-// }
 
 /*
 TODO

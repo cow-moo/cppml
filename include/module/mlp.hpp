@@ -13,15 +13,19 @@ namespace module {
 template <typename T = float>
 class MLP : public module::Module<T> {
 public:
-    MLP(const std::vector<size_t>& dims) {
+    MLP(const std::vector<size_t>& dims, std::string name="mlp", std::shared_ptr<ComputationGraph> graph=nullptr) : Module<T>(name, graph) {
         assert(dims.size() >= 2);
 
         for (size_t i = 1; i < dims.size() - 1; i++) {
-            hiddenLayers.push_back(this->template 
-                                   register_module<module::LinearReLU<T>>(dims[i - 1], dims[i]));
+            hiddenLayers.push_back(
+                this->template register_module<module::LinearReLU<T>>(
+                    "l" + std::to_string(i - 1), dims[i - 1], dims[i]
+                )
+            );
         }
-        outputLayer = this->template 
-                      register_module<module::Linear<T>>(dims[dims.size() - 2], dims[dims.size() - 1]);
+        outputLayer = this->template register_module<module::Linear<T>>(
+            "l" + std::to_string(dims.size() - 1), dims[dims.size() - 2], dims[dims.size() - 1]
+        );
     }
 
     Expression<T> forward(const Expression<T>& input) override {

@@ -12,7 +12,7 @@ namespace module {
 template <typename T>
 class Module {
 public:
-    Module(std::shared_ptr<ComputationGraph> graph=nullptr) : graph_(graph) {
+    Module(std::string name="unnamed", std::shared_ptr<ComputationGraph> graph=nullptr) : name_(name), graph_(graph) {
         if (graph_ == nullptr) {
             graph_ = std::make_shared<ComputationGraph>();
         }
@@ -38,16 +38,17 @@ public:
         return res;
     }
 
-    Expression<T> register_weight(const Tensor<T>& val, std::string name="unnamed") {
+    Expression<T> register_weight(std::string name, const Tensor<T>& val) {
         assert(graph_);
-        weights_.push_back(Expression(val, graph_.get(), name));
+        weights_.push_back(Expression(val, name_ + "/" + name, graph_.get()));
         return weights_.back();
     }
 
     template <typename ModuleType, typename... Args>
-    std::shared_ptr<ModuleType> register_module(Args&&... args) {
+    requires std::constructible_from<ModuleType, Args..., std::string, std::shared_ptr<ComputationGraph>>
+    std::shared_ptr<ModuleType> register_module(std::string name, Args&&... args) {
         assert(graph_);
-        auto m = std::make_shared<ModuleType>(std::forward<Args>(args)..., graph_);
+        auto m = std::make_shared<ModuleType>(std::forward<Args>(args)..., name_ + "/" + name, graph_);
         submodules_.push_back(m);
         return m;
     }
@@ -55,6 +56,7 @@ public:
 private:
     std::vector<Expression<T>> weights_;
     std::vector<std::shared_ptr<Module<T>>> submodules_;
+    std::string name_;
     std::shared_ptr<ComputationGraph> graph_;
 };
 
