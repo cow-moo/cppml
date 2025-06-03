@@ -2,6 +2,8 @@
 #include <fstream>
 #include "shape.hpp"
 
+namespace dataloader {
+
 static uint32_t read_uint32(std::ifstream& f) {
     uint8_t bytes[4];
     f.read(reinterpret_cast<char*>(bytes), 4);
@@ -21,12 +23,12 @@ bool MNISTDataset::load_images(const std::string& path) {
 
     images.reserve(num_images);
     for (uint32_t i = 0; i < num_images; ++i) {
-        images.emplace_back(Tensor<float>::zeros({1, 28 * 28}));
+        images.emplace_back(Tensor<float>::zeros({28 * 28}));
         //Tensor<float> img = Tensor<float>::zeros({1, 28 * 28});
         for (int j = 0; j < 28 * 28; ++j) {
             uint8_t byte;
             file.read(reinterpret_cast<char*>(&byte), 1);
-            images.back()[0][j] = byte / 255.0f;
+            images.back()[j] = byte / 255.0f;
             //img[0][j] = byte / 255.0f;
         }
         //images.emplace_back(img);
@@ -51,4 +53,6 @@ bool MNISTDataset::load_labels(const std::string& path) {
 
 std::pair<Tensor<float>, uint8_t> MNISTDataset::get(size_t index) const {
     return {images[index], labels[index]};
+}
+
 }

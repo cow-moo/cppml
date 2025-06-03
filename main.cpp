@@ -4,6 +4,7 @@
 #include "module.hpp"
 #include "solver.hpp"
 #include "dataloader.hpp"
+#include "loss.hpp"
 
 using linalg::Tensor;
 using linalg::Range;
@@ -43,7 +44,7 @@ void test_elementwise_ops() {
 
 void test_sum() {
     Tensor<float> t({{1, 2, 3}, {4, 5, 6}});
-    Tensor<float> s = t.sum(0);
+    Tensor<float> s = t.sum({0});
     assert(s.shape() == std::vector<size_t>({3}));
     assert((float)s[1] == 7);
 }
@@ -210,28 +211,6 @@ void run_tests() {
     std::cout << "All tests passed!" << std::endl;
 }
 
-template <typename T>
-Expression<T> mse_loss(const Expression<T>& a, const Expression<T>& b) {
-    Expression<T> diff = a - b;
-    return sum(diff * diff) / diff.value().numel();
-}
-
-class MLP : public module::Module<float> {
-public:
-    MLP() {
-        l1 = register_module<module::LinearReLU<float>>(1, 8);
-        l2 = register_module<module::Linear<float>>(8, 1);
-    }
-
-    Expression<float> forward(const Expression<float>& input) override {
-        return l2->forward(l1->forward(input));
-    }
-
-private:
-    std::shared_ptr<module::LinearReLU<float>> l1;
-    std::shared_ptr<module::Linear<float>> l2;
-};
-
 void linreg() {
     Tensor<> x = {0, 1, 2, 3, 4};
     x.assign(x.reshape({5, 1}));
@@ -244,7 +223,7 @@ void linreg() {
 
     for (int epoch = 0; epoch < 100; epoch++) {
         auto yPred = linear(x);
-        auto loss = mse_loss(yPred, Expression<>(y));
+        auto loss = loss::mse(yPred, y);
         loss.backward();
         gd.step();
         gd.zero_grad();
@@ -269,12 +248,12 @@ void quadreg() {
     // x[Range(5)].print();
     // y[Range(5)].print();
 
-    MLP model;
+    module::MLP<> model({1, 8, 1});
     solver::GradientDescent gd(model.weights(), 0.01);
 
     for (int epoch = 0; epoch < 1000; epoch++) {
         auto yPred = model(x);
-        auto loss = mse_loss(yPred, Expression<>(y));
+        auto loss = loss::mse(yPred, y);
         loss.backward();
         gd.step();
         gd.zero_grad();
@@ -282,7 +261,7 @@ void quadreg() {
             loss.value().print();
         //yPred.value.print();
     }
-    mse_loss(model(x), Expression<>(y)).print();
+    loss::mse(model(x), y).print();
 
     std::cout << "y pred" << std::endl;
     (model(x).value() - y).print();
@@ -292,6 +271,58 @@ void quadreg() {
     for (auto &w : model.weights()) {
         w.value().print();
     }
+}
+
+void mnist_mlp() {
+    dataloader::MNISTDataset train;
+    assert(train.load_images("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte"));
+    assert(train.load_labels("../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte"));
+    
+    // for (int i = 0; i < 10; i++) {
+    //     auto [img, label] = train.get(i);
+    //     img.assign(img.reshape({28, 28}));
+    //     std::cout << "Label: " << ((int)label) << std::endl;
+    //     for (int i = 0; i < 28; i++) {
+    //         for (int j = 0; j < 28; j++) {
+    //             std::cout << (img[i][j] < 0.5 ? '.' : '@');
+    //         }
+    //         std::cout << std::endl;
+    //     }
+    // }
+
+    std::vector<Tensor<float>> y;
+    for (uint8_t label : train.labels) {
+        y.emplace_back(Tensor<float>::zeros({10}));
+        y.back()[label] = 1.0f;
+    }
+
+    dataloader::DataLoader<float> dl(train.images, y, 64);
+
+    module::MLP<float> model({784, 128, 64, 10});
+    solver::GradientDescent gd(model.weights(), 0.001);
+
+    std::cout << "Ready" << std::endl;
+
+    for (int epoch = 0; epoch < 10; epoch++) {
+        float totalLoss = 0.0f;
+        int cnt = 0;
+        for (auto&& [x, y] : dl) {
+            auto logits = model(x);
+            auto loss = loss::cross_entropy_logits(logits, y);
+            totalLoss += loss.value();
+            cnt++;
+            loss.backward();
+            gd.step();
+            gd.zero_grad();
+            //yPred.value.print();
+        }
+        std::cout << totalLoss / cnt << std::endl;
+    }
+    //loss::mse(model(x), Expression<>(y)).print();
+    
+    // for (auto &w : model.weights()) {
+    //     w.value().print();
+    // }
 }
 
 int main() {
@@ -326,23 +357,17 @@ int main() {
     //     w.print();
     // }
 
-    quadreg();
+    //quadreg();
 
-    // MNISTDataset train;
-    // assert(train.load_images("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte"));
-    // assert(train.load_labels("../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte"));
-    
-    // for (int i = 0; i < 10; i++) {
-    //     auto [img, label] = train.get(i);
-    //     img.assign(img.reshape({28, 28}));
-    //     std::cout << "Label: " << ((int)label) << std::endl;
-    //     for (int i = 0; i < 28; i++) {
-    //         for (int j = 0; j < 28; j++) {
-    //             std::cout << (img[i][j] < 0.5 ? '.' : '@');
-    //         }
-    //         std::cout << std::endl;
-    //     }
-    // }
+    mnist_mlp();
+
+    //Tensor<> a({{1, 5, 3}, {4, 2, 6}});
+    // a.max({0}).print();
+    // a.max({1}).print();
+
+    //a.unsqueeze(a.shape().size()).print();
+    //a.softmax().print();
+
     return 0;
 }
 

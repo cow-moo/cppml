@@ -68,6 +68,19 @@ public:
         strides_.insert(strides_.begin(), subSize);
     }
 
+    Tensor(const Shape& shape) {
+        shape_ = shape;
+
+        size_t totalSize = 1;
+        for (int i = shape.size() - 1; i >= 0; i--) {
+            strides_.push_back(totalSize);
+            totalSize *= shape[i];
+        }
+        reverse(strides_.begin(), strides_.end());
+
+        data_ = std::shared_ptr<U[]>(new U[totalSize]);
+    }
+
     Tensor(const Tensor& other) {
         assign(other);
     }
@@ -141,6 +154,7 @@ public:
     template <typename Func>
     Tensor& apply_binary_inplace(const Tensor& other, Func op) {
         if (shape_ != Shape::broadcast(this->shape_, other.shape_)) {
+            std::cout << this->shape_ << " " << other.shape_ << std::endl;
             throw std::invalid_argument("Broadcast failed.");
         }
 
@@ -241,18 +255,17 @@ public:
         return *this;
     }
 
-    Tensor sum() const {
-        std::vector<int> axes(shape_.size());
-        for (size_t i = 0; i < shape_.size(); i++) axes[i] = i;
-        return sum(std::move(axes));
+    Tensor exp() const {
+        return apply_unary([](U a) { return std::exp(a); });
     }
 
-    Tensor sum(int axis) const {
-        return sum(std::vector<int>{axis});
+    Tensor log() const {
+        return apply_unary([](U a) { return std::log(a); });
     }
-    
+
     // Allows duplicates and ignores them
-    Tensor sum(std::vector<int>&& axes) const {
+    template <typename Func>
+    Tensor reduce(const std::vector<int>& axes, U identity, Func op) const {
         if (axes.size() == 0)
             return copy();
 
@@ -273,9 +286,26 @@ public:
                 newShape.push_back(shape_[i]);
         }
 
-        Tensor res = zeros(newShape);
-        res.sum_helper(*this, reduceAxis, 0, offset_, 0, 0);
+        Tensor res(newShape);
+        res = identity;
+        res.reduce_helper(*this, reduceAxis, 0, offset_, 0, 0, op);
         return res;
+    }
+    
+    // Allows duplicates and ignores them
+    Tensor sum(const std::vector<int>& axes) const {
+        return reduce(axes, 0, [](U a, U b) { return a + b; });
+    }
+
+    Tensor sum() const {
+        std::vector<int> axes(shape_.size());
+        for (size_t i = 0; i < shape_.size(); i++) axes[i] = i;
+        return sum(axes);
+    }
+
+    Tensor max(const std::vector<int>& axes) const {
+        return reduce(axes, std::numeric_limits<U>::lowest(), 
+                      [](U a, U b) { return std::max(a, b); });
     }
 
     // Broadcasts first n-2 dimensions
@@ -310,6 +340,20 @@ public:
             res.shape_.pop_back();
         }
         return res;
+    }
+
+    Tensor softmax() const {
+        Tensor scratch = max({-1}).unsqueeze(shape().size() - 1);
+        scratch.assign((*this) - scratch);
+        scratch.assign(scratch.exp());
+        Tensor sum = scratch.sum({-1}).unsqueeze(shape().size() - 1);
+        return scratch / sum;
+    }
+
+    Tensor log_softmax() const {
+        Tensor mmax = max({-1}).unsqueeze(shape().size() - 1);
+        Tensor sum = ((*this) - mmax).exp().sum({-1}).unsqueeze(shape().size() - 1);
+        return (*this) - sum.log() + mmax;
     }
 
     Tensor T() const {
@@ -390,6 +434,18 @@ public:
         return res;
     }
 
+    Tensor unsqueeze(int axis) const {
+        if (axis < 0) axis += shape_.size();
+        if (axis < 0 || axis > (int)shape_.size()) {
+            throw std::invalid_argument("Axis index out of bounds.");
+        }
+
+        Shape newShape = shape_;
+        newShape.insert(newShape.begin() + axis, 1);
+
+        return reshape(newShape);
+    }
+
     size_t numel() {
         size_t res = 1;
         for (auto x : shape_) {
@@ -449,7 +505,7 @@ public:
             }
         }
 
-        return sum(std::move(broadcastedAxes));
+        return sum(broadcastedAxes);
     }
 
     const Shape& shape() const {
@@ -462,19 +518,6 @@ protected:
     Shape shape_;
     std::vector<size_t> strides_;
     size_t offset_ = 0;
-
-    Tensor(const Shape& shape) {
-        shape_ = shape;
-
-        size_t totalSize = 1;
-        for (int i = shape.size() - 1; i >= 0; i--) {
-            strides_.push_back(totalSize);
-            totalSize *= shape[i];
-        }
-        reverse(strides_.begin(), strides_.end());
-
-        data_ = std::shared_ptr<U[]>(new U[totalSize]);
-    }
 
     template <std::size_t... Is, typename... Args>
     Tensor(const Tensor& orig, std::index_sequence<Is...>, Args&&... args) {
@@ -611,6 +654,32 @@ protected:
         }
     }
 
+    // Func should have some signature op(U, U) -> U
+    template <typename Func>
+    void reduce_helper(const Tensor& other, const std::vector<bool>& reduceAxis, 
+                       int index, int otherIndex, int axis, int otherAxis, Func op) const {
+        if (otherAxis == (int)other.shape_.size()) {
+            data_[index] = op(data_[index], other.data_[otherIndex]);
+            return;
+        }        
+
+        if (reduceAxis[otherAxis]) {
+            for (size_t i = 0; i < other.shape_[otherAxis]; i++) {
+                reduce_helper(other, reduceAxis, 
+                              index, otherIndex + other.strides_[otherAxis] * i, 
+                              axis, otherAxis + 1, op);
+            }
+        }
+        else {
+            assert(shape_[axis] == other.shape_[otherAxis]);
+            for (size_t i = 0; i < other.shape_[otherAxis]; i++) {
+                reduce_helper(other, reduceAxis, 
+                              index + strides_[axis] * i, otherIndex + other.strides_[otherAxis] * i, 
+                              axis + 1, otherAxis + 1, op);
+            }
+        }
+    }
+
     void matmul_helper(const Tensor& a, const Tensor& b, int index, int aIndex, int bIndex, int axis) {
         int aAxis = axis + a.shape_.size() - shape_.size();
         int bAxis = axis + b.shape_.size() - shape_.size();
@@ -645,25 +714,6 @@ protected:
                 bIndex + (bAxis >= 0 ? b.strides_[bAxis] * i : 0),
                 axis + 1
             );
-        }
-    }
-
-    void sum_helper(const Tensor& other, const std::vector<bool>& reduceAxis, int index, int otherIndex, int axis, int otherAxis) const {
-        if (otherAxis == (int)other.shape_.size()) {
-            data_[index] += other.data_[otherIndex];
-            return;
-        }        
-
-        if (reduceAxis[otherAxis]) {
-            for (size_t i = 0; i < other.shape_[otherAxis]; i++) {
-                sum_helper(other, reduceAxis, index, otherIndex + other.strides_[otherAxis] * i, axis, otherAxis + 1);
-            }
-        }
-        else {
-            assert(shape_[axis] == other.shape_[otherAxis]);
-            for (size_t i = 0; i < other.shape_[otherAxis]; i++) {
-                sum_helper(other, reduceAxis, index + strides_[axis] * i, otherIndex + other.strides_[otherAxis] * i, axis + 1, otherAxis + 1);
-            }
         }
     }
 };

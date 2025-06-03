@@ -154,6 +154,10 @@ public:
         return res;
     }
 
+    Expression operator-() {
+        return (*this) * -1;
+    }
+
     Expression operator*(T other) {
         Expression res(value() * other, graph_, "*");
 
@@ -203,8 +207,36 @@ public:
         Expression res(value().apply_unary([](T val) { return val > 0 ? val : 0; }), graph_, "relu");
 
         if (res.graph_) {
-            res.graph_->tape.push_back([resGrad = *res.grad_, grad_ = *grad_, value = this->value()]() mutable {
-                grad_ += value.apply_unary([](T val) { return val > 0 ? 1 : 0; }) * resGrad;
+            res.graph_->tape.push_back([resGrad = *res.grad_, grad = *grad_, value = this->value()]() mutable {
+                grad += value.apply_unary([](T val) { return val > 0 ? 1 : 0; }) * resGrad;
+            });
+        }
+
+        return res;
+    }
+
+    // Softmax on last dimension
+    Expression softmax() const {
+        Expression res(value().softmax(), graph_, "softmax");
+
+        if (res.graph_) {
+            res.graph_->tape.push_back([resGrad = *res.grad_, resValue = res.value(), grad = *grad_]() mutable {
+                Tensor<T> scratch = (resGrad * resValue).sum({-1}).unsqueeze(resGrad.shape().size() - 1);
+                grad += resValue * (resGrad - scratch);
+            });
+        }
+
+        return res;
+    }
+
+    Expression log_softmax() const {
+        Expression res(value().log_softmax(), graph_, "log_softmax");
+
+        if (res.graph_) {
+            res.graph_->tape.push_back([resGrad = *res.grad_, resValue = res.value(), grad = *grad_]() mutable {
+                Tensor<T> probs = resValue.exp(); // log_softmax was x - logsumexp, so exp(log_softmax) = softmax
+                Tensor<T> sumGrad = resGrad.sum({-1}).unsqueeze(resGrad.shape().size() - 1);
+                grad += resGrad - probs * sumGrad;
             });
         }
 
