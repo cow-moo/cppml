@@ -5,6 +5,7 @@
 #include "solver.hpp"
 #include "dataloader.hpp"
 #include "loss.hpp"
+#include "backend.hpp"
 
 using linalg::Tensor;
 using linalg::Range;
@@ -394,7 +395,7 @@ int main() {
     // t.softmax().log().print();
     // t.log_softmax().print();
 
-    mnist_mlp();
+    //mnist_mlp();
 
     // Tensor<> t = Tensor<>::normal({2, 3, 3});
     // t.print();
@@ -408,6 +409,29 @@ int main() {
     // Tensor<bool> res = a == b;
     // res.sum({1}).print();
     // res.astype<int>().sum({1}).print();
+
+    // backend::CpuSingleThreadBuffer<float>* test = new backend::CpuSingleThreadBuffer<float>(10);//backend::CpuSingleThreadBuffer<float>::create(10);
+
+    // test->at(0) = 5;
+    // std::cout << test->at(0) << std::endl;
+
+    // (*test)[1] = 3;
+    // std::cout << (*test)[1] << std::endl;
+
+    // for (int i = 0; i < 30; i++) {
+    //     (*test)[i] = i;
+    //     std:: cout << (*test)[i] << std::endl;
+    // }
+
+    backend::SharedBuffer<float> test = backend::make_shared_buffer<backend::CpuSingleThreadBuffer<float>>(10);
+    //backend::CpuSingleThreadBuffer<float>::create(10);
+    backend::SharedBuffer<float> test2 = test;
+
+    test->at(0) = 5;
+    std::cout << test->at(0) << std::endl;
+
+    test2->at(0) = 10;
+    std::cout << test->at(0) << std::endl;
 
     return 0;
 }

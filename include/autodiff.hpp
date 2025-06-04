@@ -245,9 +245,8 @@ public:
 
         if (res.graph_) {
             res.graph_->tape.push_back([resGrad = *res.grad_, resValue = res.value(), grad = *grad_]() mutable {
-                Tensor<T> probs = resValue.exp(); // log_softmax was x - logsumexp, so exp(log_softmax) = softmax
                 Tensor<T> sumGrad = resGrad.sum({-1}).unsqueeze(resGrad.shape().size() - 1);
-                grad += resGrad - probs * sumGrad;
+                grad += resGrad - resValue.exp() * sumGrad;
             });
         }
 

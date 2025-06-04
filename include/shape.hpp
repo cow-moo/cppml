@@ -5,6 +5,8 @@
 #include <memory>
 #include <sstream>
 
+// TODO: reimplement with SBO
+
 struct Shape {
     std::vector<size_t> data;
 
