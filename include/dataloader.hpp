@@ -4,9 +4,11 @@
 #include <vector>
 #include <numeric>
 #include "tensor.hpp"
-using namespace linalg;
 
 namespace dataloader {
+
+using linalg::Tensor;
+using linalg::Shape;
 
 template <typename T = float>
 class DataLoader {
@@ -75,6 +77,9 @@ private:
 };
 
 struct MNISTDataset {
+    template <typename T>
+    using Tensor = linalg::Tensor<T>;
+    
     std::vector<Tensor<float>> images;
     std::vector<uint8_t> labels;
 

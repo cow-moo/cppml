@@ -5,57 +5,74 @@
 #include <memory>
 #include <sstream>
 
+namespace linalg {
+
 // TODO: reimplement with SBO
 
+using Strides = std::vector<size_t>;
+
+
 struct Shape {
-    std::vector<size_t> data;
+    std::vector<size_t> dims;
 
     Shape() = default;
-    Shape(std::vector<size_t> d) : data(std::move(d)) {}
-    Shape(std::initializer_list<size_t> init) : data(init) {}
+    Shape(std::vector<size_t> d) : dims(std::move(d)) {}
+    Shape(std::initializer_list<size_t> init) : dims(init) {}
 
-    operator std::vector<size_t>&() { return data; }
-    operator const std::vector<size_t>&() const { return data; }
+    operator std::vector<size_t>&() { return dims; }
+    operator const std::vector<size_t>&() const { return dims; }
 
     // Forward vector methods
-    auto front() const { return data.front(); }
-    auto back() const { return data.back(); }
+    auto front() const { return dims.front(); }
+    auto back() const { return dims.back(); }
 
-    auto begin() { return data.begin(); }
-    auto end() { return data.end(); }
-    auto begin() const { return data.begin(); }
-    auto end() const { return data.end(); }
+    auto begin() { return dims.begin(); }
+    auto end() { return dims.end(); }
+    auto begin() const { return dims.begin(); }
+    auto end() const { return dims.end(); }
 
     void push_back(size_t val) {
-        data.push_back(val);
+        dims.push_back(val);
     }
 
-    void pop_back() { data.pop_back(); }
+    void pop_back() { dims.pop_back(); }
 
     auto insert(typename std::vector<size_t>::iterator pos, size_t val) {
-        return data.insert(pos, val);
+        return dims.insert(pos, val);
     }
 
     auto erase(typename std::vector<size_t>::iterator pos) {
-        return data.erase(pos);
+        return dims.erase(pos);
     }
 
     auto erase(typename std::vector<size_t>::iterator first, typename std::vector<size_t>::iterator last) {
-        return data.erase(first, last);
+        return dims.erase(first, last);
     }
 
     bool operator==(const Shape& other) const {
-        return data == other.data;
+        return dims == other.dims;
     }
 
     bool operator!=(const Shape& other) const {
         return !(*this == other);
     }
 
-    size_t& operator[](size_t i) { return data[i]; }
-    const size_t& operator[](size_t i) const { return data[i]; }
+    auto data() const {
+        return dims.data();
+    }
 
-    size_t size() const { return data.size(); }
+    size_t& operator[](size_t i) { return dims[i]; }
+    const size_t& operator[](size_t i) const { return dims[i]; }
+
+    size_t size() const { return dims.size(); }
+
+    size_t numel() const {
+        size_t res = 1;
+        for (auto x : dims) {
+            res *= x;
+        }
+        return res;
+    }
 
     static Shape broadcast(const Shape& a, const Shape& b) {
         Shape res;
@@ -95,5 +112,7 @@ struct Shape {
         return os;
     }
 };
+
+}
 
 #endif // SHAPE_H

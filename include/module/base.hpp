@@ -3,11 +3,11 @@
 
 #include "autodiff.hpp"
 
+namespace module {
+
 using linalg::Tensor;
 using autodiff::Expression;
 using autodiff::ComputationGraph;
-
-namespace module {
 
 template <typename T>
 class Module {

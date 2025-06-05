@@ -5,79 +5,82 @@
 
 namespace backend {
 
-enum class Backend {
+using linalg::Shape;
+using linalg::Strides;
+
+enum class BackendType {
     CpuSingleThread,
-    CpuMultiThread,
+    //CpuMultiThread,
 };
 
-template <typename T> class DeviceBuffer;
-
-template <typename T>
-class SharedBuffer {
-public:
-    SharedBuffer(DeviceBuffer<T>* buffer) : buffer_(buffer) {}
-
-    SharedBuffer(const SharedBuffer& other) : buffer_(other.buffer_) {
-        if (buffer_)
-            buffer_->inc_ref();
-    }
-
-    SharedBuffer(SharedBuffer&& other) noexcept : buffer_(std::exchange(other.buffer_, nullptr)) {}
-
-    ~SharedBuffer() {
-        if (buffer_)
-            buffer_->dec_ref();
-    }
-
-    SharedBuffer& operator=(const SharedBuffer& other) {
-        if (this != &other) {
-            if (buffer_)
-                buffer_->dec_ref();
-            buffer_ = other.buffer_;
-            if (buffer_)
-                buffer_->inc_ref();
-        }
-        return *this;
-    }
-
-    SharedBuffer& operator=(SharedBuffer&& other) noexcept {
-        if (buffer_) buffer_->dec_ref();
-        buffer_ = std::exchange(other.buffer_, nullptr);
-        return *this;
-    }
-
-    explicit operator bool() const { return buffer_ != nullptr; }
-
-    DeviceBuffer<T>* get() { return buffer_; }
-    DeviceBuffer<T>& operator*() { return *buffer_; }
-    DeviceBuffer<T>* operator->() { return buffer_; }
-
-private:
-    DeviceBuffer<T>* buffer_;
+enum class BinOp {
+    Add,   // a + b
+    Sub,   // a - b
+    SubBy, // b - a (for scalar - tensor)
+    Mul,   // a * b
+    Div,   // a / b
+    DivBy, // b / a (for scalar / tensor)
+    Eq,    // a == b
+    Pass,  // b (for assignment)
 };
 
-template <typename BufferType, typename... Args>
-auto make_shared_buffer(Args&&... args) {
-    using T = typename BufferType::value_type;
-    return SharedBuffer<T>(BufferType::create(std::forward<Args>(args)...));
-}
+enum class UnOp {
+    Exp,
+    Log,
+};
 
+template <typename T> class SharedBuffer;
+template <typename T> class CpuSingleThreadBuffer;
+
+#define BACKEND_DISPATCH(...) \
+    switch (type_) { \
+        case BackendType::CpuSingleThread: \
+            static_cast<CpuSingleThreadBuffer<T>*>(this)->template __VA_ARGS__; \
+            break; \
+    }
 
 template <typename T>
 class DeviceBuffer {
 public:
-    Backend backend() const { return backend_; }
+    BackendType backend_type() const { return type_; }
+
+    // Writes a flattened tensor
+    virtual void write_flat(const std::vector<T>& values) = 0;
 
     virtual T& at(size_t i) = 0;
+    virtual const T& at(size_t i) const = 0;
 
+    // Fake virtual function due to template
+    template <typename U, typename V>
+    void apply_binary(const Shape& shape, const Strides& rStrides, size_t rOffset,
+                      DeviceBuffer<U>* a, const Strides& aStrides, size_t aOffset, 
+                      DeviceBuffer<V>* b, const Strides& bStrides, size_t bOffset,
+                      BinOp op) {
+        BACKEND_DISPATCH(apply_binary(shape, rStrides, rOffset, a, aStrides, aOffset, b, bStrides, bOffset, op));
+    }
+
+    template <typename U, typename V>
+    void apply_binary(const Shape& shape, const Strides& rStrides, size_t rOffset,
+                      DeviceBuffer<U>* a, const Strides& aStrides, size_t aOffset,
+                      V b, BinOp op) {
+        BACKEND_DISPATCH(apply_binary(shape, rStrides, rOffset, a, aStrides, aOffset, b, op));
+    }
+
+    template <typename U, typename V>
+    void apply_unary(const Shape& shape, const Strides& rStrides, size_t rOffset,
+                     DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset,
+                     UnOp op) {
+        BACKEND_DISPATCH(apply_unary(shape, rStrides, rOffset, other, otherStrides, otherOffset, op));
+    }
+    
 protected:
-    DeviceBuffer(Backend backend) : refs_(1), backend_(backend) {}
+    DeviceBuffer(BackendType type) : refs_(1), type_(type) {}
 
     virtual ~DeviceBuffer() {}
 
 private:
     size_t refs_;
-    Backend backend_;
+    BackendType type_;
 
     void inc_ref() {
         ++refs_;
@@ -91,6 +94,6 @@ private:
     friend class SharedBuffer<T>;
 };
 
-};
+}
 
 #endif // BACKEND_BASE_H

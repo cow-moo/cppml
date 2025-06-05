@@ -6,9 +6,10 @@
 #include "tensor.hpp"
 #include "shape.hpp"
 
-using linalg::Tensor;
-
 namespace autodiff {
+
+using linalg::Tensor;
+using linalg::Shape;
 
 class ComputationGraph {
 public:

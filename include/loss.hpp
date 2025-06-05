@@ -2,7 +2,6 @@
 #define LOSS_H
 
 #include "autodiff.hpp"
-using namespace autodiff;
 
 namespace loss {
 

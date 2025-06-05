@@ -14,6 +14,7 @@
 #include <optional>
 #include "shape.hpp"
 #include "config.hpp"
+#include "backend.hpp"
 
 namespace linalg {
 
@@ -34,127 +35,44 @@ struct Range {
 template <typename U = float>
 class Tensor {
 public:
-    struct Iterator {
-        const U* data;
-        Shape shape;
-        std::array<size_t, MAX_SBO_DIMS> strides;
-        std::array<size_t, MAX_SBO_DIMS> idxs;
-        size_t flatIdx;
-
-        Iterator(const Tensor& t) : data(t.data_.get()) {
-            shape = t.shape_;
-            for (size_t i = 0; i < t.strides_.size(); i++)
-                strides[i] = t.strides_[i];
-            flatIdx = t.offset_;
-        }
-
-        U& operator*() {
-            return data[flatIdx];
-        }
-
-        Iterator& operator++() {
-            for (int i = shape.size() - 1; i >= 0; i--) {
-                flatIdx += strides[i];
-                if (++idxs[i] == shape[i]) {
-                    idxs[i] = 0;
-                    flatIdx -= strides[i] * shape[i];
-                }
-                else break;
-            }
-            return *this;
-        }
-
-        Iterator& operator+=(size_t n) {
-            idxs[shape.size() - 1] += n;
-            flatIdx += n * strides[shape.size() - 1];
-
-            for (int i = shape.size() - 1; i >= 1; i--) {
-                if (idxs[i] >= shape[i]) {
-                    size_t num = idxs[i] / shape[i];
-                    idxs[i] -= num * shape[i];
-                    flatIdx -= num * shape[i] * strides[i];
-                    idxs[i - 1] += num;
-                    flatIdx += num * strides[i - 1];
-                }
-                else break;
-            }
-
-            return *this;
-        }
-        
-        Iterator operator+(size_t n) {
-            Iterator res(*this);
-            res += n;
-            return res;
-        }
-
-        bool operator==(const Iterator& other) const {
-            return other.data == data && other.flatIdx == flatIdx;
-        }
-    };
-
     // Constructor for 1D tensor
-    Tensor(const std::initializer_list<U>& values) : data_(new U[values.size()]) {
-        memcpy(data_.get(), values.begin(), values.size() * sizeof(U));
-        shape_ = {values.size()};
-        strides_ = {1};
+    // Tensor(const std::initializer_list<U>& values, backend::BackendType type) : data_(backend::make_shared_buffer(values, type)) {
+    //     //memcpy(data_.get(), values.begin(), values.size() * sizeof(U));
+    //     shape_ = {values.size()};
+    //     strides_ = {1};
+    // }
+
+    struct NestedInitializer;
+
+    Tensor(const NestedInitializer& initializer, backend::BackendType type = DEFAULT_BACKEND) : Tensor(initializer.shape, type) {
+        data_->write_flat(initializer.flatData);
     }
 
-    // Recursive constructor for arbitrary-dimensional tensors
-    Tensor(const std::initializer_list<Tensor<U>>& slices) {
-        if (slices.size() == 0) {
-            throw std::invalid_argument("Tensor cannot be empty");
-        }
-
-        // Determine the shape of the first slice
-        shape_ = slices.begin()->shape_;
-        strides_ = slices.begin()->strides_;
-
-        size_t subSize = strides_.front() * shape_.front();
-
-        data_ = std::shared_ptr<U[]>(new U[slices.size() * subSize]);
-
-        U* p = data_.get();
-        // Check consistency of shapes across slices
-        for (const Tensor<U>& slice : slices) {
-            if (slice.shape_ != shape_) {
-                throw std::invalid_argument("All slices must have the same shape");
-            }
-            memcpy(p, slice.data_.get(), subSize * sizeof(U));
-            p += subSize;
-        }
-
-        shape_.insert(shape_.begin(), slices.size());
-        strides_.insert(strides_.begin(), subSize);
-    }
-
-    Tensor(const Shape& shape) {
-        shape_ = shape;
-
+    Tensor(const Shape& shape, backend::BackendType type = DEFAULT_BACKEND) 
+        : data_(shape.numel(), type), shape_(shape) {
         size_t totalSize = 1;
         for (int i = shape.size() - 1; i >= 0; i--) {
             strides_.push_back(totalSize);
             totalSize *= shape[i];
         }
         reverse(strides_.begin(), strides_.end());
-
-        data_ = std::shared_ptr<U[]>(new U[totalSize]);
     }
 
-    Tensor(const Tensor& other) {
-        assign(other);
-    }
+    // Needed to resolve ambiguity between NestedInitializer and Shape constructors
+    Tensor(const std::initializer_list<U>& list, backend::BackendType type = DEFAULT_BACKEND)
+        : Tensor(NestedInitializer(list), type) {}
+
+    Tensor(const Tensor& other) 
+        : data_(other.data_), shape_(other.shape_), strides_(other.strides_), offset_(other.offset_) {}
 
     // Elementwise assignment
     Tensor& operator=(U other) {
-        apply_unary_inplace([other](U& a) { a = other; });
-        return *this;
+        return apply_binary_inplace(other, backend::BinOp::Pass);
     }
 
     // Elementwise assignment
     Tensor& operator=(const Tensor& other) {
-        apply_binary_inplace(other, [](U& a, U b) { a = b; });
-        return *this;
+        return apply_binary_inplace(other, backend::BinOp::Pass);
     }
 
     // Rebinding assignment
@@ -202,46 +120,75 @@ public:
         return Tensor(*this, std::index_sequence_for<Args...>{}, std::forward<Args>(args)...);
     }
 
-    // Apply some elementwise operation on two tensors with broadcasting
-    // Func should have some signature op(U, V) -> R
-    // Consider using template <auto op> with constexpr op instead of passing as parameter
-    template <typename R = U, typename V = U, typename Func>
-    Tensor<R> apply_binary(const Tensor<V>& other, Func op) const {
-        Shape shape = Shape::broadcast(this->shape_, other.shape_);
+    template <typename R = U, typename V = U>
+    Tensor<R> apply_binary(const Tensor<V>& other, backend::BinOp op) const {
+        Shape shape = Shape::broadcast(shape_, other.shape_);
 
-        Tensor<R> res = Tensor<R>::zeros(shape);
-        res.apply_binary_helper((*this), other, op, 0, offset_, other.offset_, 0);
+        Tensor<R> res(shape);
+
+        // We can const_cast because we know res != this and other
+        res.data_->apply_binary(shape, res.strides_, res.offset_,
+                                const_cast<backend::DeviceBuffer<U>*>(data_.get()), strides_, offset_,
+                                const_cast<backend::DeviceBuffer<V>*>(other.data_.get()), other.strides_, other.offset_,
+                                op);
+
+        return res;
+    }
+
+    template <typename R = U, typename V = U>
+    Tensor<R> apply_binary(V other, backend::BinOp op) const {
+        Tensor<R> res(shape_);
+        res.data_->apply_binary(shape_, res.strides_, res.offset_,
+                                const_cast<backend::DeviceBuffer<U>*>(data_.get()), strides_, offset_,
+                                other, op);
         return res;
     }
 
     // Apply some elementwise operation on two tensors with broadcasting, modifying the LHS tensor in place
     // LHS tensor must be greater in all dimensions
     // Func should have some signature op(U&, U) -> void
-    template <typename Func>
-    Tensor& apply_binary_inplace(const Tensor& other, Func op) {
+    template <typename V = U>
+    Tensor& apply_binary_inplace(const Tensor<V>& other, backend::BinOp op) {
         if (shape_ != Shape::broadcast(this->shape_, other.shape_)) {
             std::cout << this->shape_ << " " << other.shape_ << std::endl;
             throw std::invalid_argument("Broadcast failed.");
         }
 
-        apply_binary_inplace_helper(other, op, offset_, other.offset_, 0);
+        data_->apply_binary(shape_, strides_, offset_,
+                            data_.get(), strides_, offset_,
+                            other.data->get(), other.strides_, other.offset_,
+                            op);
+
+        return *this;
+    }
+
+    template <typename V>
+    Tensor& apply_binary_inplace(V other, backend::BinOp op) {
+        data_->apply_binary(shape_, strides_, offset_,
+                            data_.get(), strides_, offset_,
+                            other, op);
+
         return *this;
     }
 
     // Apply some operation on some tensor, returning a new one
     // Func should have signature op(U) -> R
-    template <typename R = U, typename Func>
-    Tensor<R> apply_unary(Func op) const {
-        Tensor<R> res = Tensor<R>::zeros(shape_);
-        res.apply_unary_helper(*this, op, 0, offset_, 0);
+    template <typename R>
+    Tensor<R> apply_unary(backend::BinOp op) const {
+        Tensor<R> res = Tensor<R>(shape_);
+        // We can const_cast because we know res != this
+        res.data_->apply_unary(shape_, res.strides_, res.offset_,
+                               const_cast<backend::DeviceBuffer<U>*>(data_.get()), strides_, offset_, 
+                               op);
         return res;
     }
 
     // Apply some operation on some tensor, modifying it in place
     // Func should have signature op(U&) -> void
-    template <typename Func>
-    Tensor& apply_unary_inplace(Func op) {
-        apply_unary_inplace_helper(op, offset_, 0);
+    Tensor& apply_unary_inplace(backend::BinOp op) {
+        data_->apply_unary(shape_, strides_, offset_,
+                           data_.get(), strides_, offset_, 
+                           op);
         return *this;
     }
 
@@ -249,88 +196,64 @@ public:
         return *this * (U)-1;
     }
 
-    Tensor operator+(const Tensor& other) const {
-        return apply_binary(other, [](U a, U b) { return a + b; });
-    }
-
-    Tensor operator-(const Tensor& other) const {
-        return apply_binary(other, [](U a, U b) { return a - b; });
-    }
-
-    Tensor operator*(const Tensor& other) const {
-        return apply_binary(other, [](U a, U b) { return a * b; });
-    }
-
-    Tensor operator/(const Tensor& other) const {
-        return apply_binary(other, [](U a, U b) { return a / b; });
-    }
-
     Tensor operator+(U other) const {
-        return apply_unary([other](U a) { return a + other; });
+        return apply_binary(other, backend::BinOp::Add);
     }
 
     Tensor operator-(U other) const {
-        return apply_unary([other](U a) { return a - other; });
+        return apply_binary(other, backend::BinOp::Sub);
     }
 
     Tensor operator*(U other) const {
-        return apply_unary([other](U a) { return a * other; });
+        return apply_binary(other, backend::BinOp::Mul);
     }
 
     Tensor operator/(U other) const {
-        return apply_unary([other](U a) { return a / other; });
+        return apply_binary(other, backend::BinOp::Div);
     }
 
     Tensor& operator+=(const Tensor& other) {
-        apply_binary_inplace(other, [](U& a, U b) { a += b; });
-        return *this;
+        return apply_binary_inplace(other, backend::BinOp::Add);
     }
 
     Tensor& operator-=(const Tensor& other) {
-        apply_binary_inplace(other, [](U& a, U b) { a -= b; });
-        return *this;
+        return apply_binary_inplace(other, backend::BinOp::Sub);
     }
 
     Tensor& operator*=(const Tensor& other) {
-        apply_binary_inplace(other, [](U& a, U b) { a *= b; });
-        return *this;
+        return apply_binary_inplace(other, backend::BinOp::Mul);
     }
 
     Tensor& operator/=(const Tensor& other) {
-        apply_binary_inplace(other, [](U& a, U b) { a /= b; });
-        return *this;
+        return apply_binary_inplace(other, backend::BinOp::Div);
     }
 
     Tensor& operator+=(U other) {
-        apply_unary_inplace([other](U& a) { a += other; });
-        return *this;
+        return apply_binary_inplace(other, backend::BinOp::Add);
     }
 
     Tensor& operator-=(U other) {
-        apply_unary_inplace([other](U& a) { a -= other; });
-        return *this;
+        return apply_binary_inplace(other, backend::BinOp::Sub);
     }
 
     Tensor& operator*=(U other) {
-        apply_unary_inplace([other](U& a) { a *= other; });
-        return *this;
+        return apply_binary_inplace(other, backend::BinOp::Mul);
     }
 
     Tensor& operator/=(U other) {
-        apply_unary_inplace([other](U& a) { a /= other; });
-        return *this;
+        return apply_binary_inplace(other, backend::BinOp::Div);
     }
 
     Tensor exp() const {
-        return apply_unary([](U a) { return std::exp(a); });
+        return apply_unary(backend::UnOp::Exp);
     }
 
     Tensor log() const {
-        return apply_unary([](U a) { return std::log(a); });
+        return apply_unary(backend::UnOp::Log);
     }
 
-    Tensor<bool> operator==(const Tensor& other) const {
-        return apply_binary<bool>(other, [](U a, U b) { return a == b; });
+    Tensor<bool> operator==(U other) const {
+        return apply_binary<bool>(other, backend::BinOp::Eq);
     }
 
     // Allows duplicate axes and ignores them
@@ -487,7 +410,7 @@ public:
         size_t lNew = 0, rNew = 0;
         size_t sizeNew = 1;
 
-        std::vector<size_t> newStrides;
+        Strides newStrides;
 
         // Logic is still a little sus but seems to work
         bool full = true;
@@ -543,11 +466,7 @@ public:
     }
 
     size_t numel() const {
-        size_t res = 1;
-        for (auto x : shape_) {
-            res *= x;
-        }
-        return res;
+        return shape_.numel();
     }
 
     template <typename R>
@@ -560,7 +479,7 @@ public:
         if (shape_.size() > 0) {
             throw std::invalid_argument("Can't cast tensor to scalar.");
         }
-        return data_[offset_];
+        return data_->at(offset_);
     }
 
     // Define << for printing using recursion
@@ -582,12 +501,6 @@ public:
 
     void print() const {
         std::cout << shape_;
-        // std::cout << "(";
-        // for (size_t i = 0; i < shape_.size(); i++) {
-        //     std::cout << shape_[i];
-        //     if (i < shape_.size() - 1)
-        //         std::cout << ", ";
-        // }
         std::cout << ": " << (*this) << std::endl;
     }
 
@@ -599,7 +512,7 @@ public:
     }
 
     Tensor broadcast_to(const Shape& shape) {
-        
+
     }
 
     Tensor broadcast_reduce_to(const Shape& shape) {
@@ -617,19 +530,39 @@ public:
         return shape_;
     }
 
-protected:
+    // Could probably rewrite to avoid intermediate allocations but probably not worth it
+    struct NestedInitializer {
+        std::vector<U> flatData;
+        Shape shape;
+
+        NestedInitializer(const std::initializer_list<U>& slice) 
+            : flatData(slice), shape({slice.size()}) {}
+
+        NestedInitializer(const std::initializer_list<NestedInitializer>& slices) {
+            shape = slices.begin()->shape;
+            for (auto& slice : slices) {
+                if (shape != slice.shape) {
+                    throw std::invalid_argument("All slices must have the same shape.");
+                }
+                flatData.insert(flatData.end(), slice.flatData.begin(), slice.flatData.end());
+            }
+            shape.insert(shape.begin(), slices.size());
+        }
+    };
+
+private:
     // Should be fixed on construction
-    std::shared_ptr<U[]> data_;
+    backend::SharedBuffer<U> data_;
+    //std::shared_ptr<U[]> data_;
     Shape shape_;
-    std::vector<size_t> strides_;
+    Strides strides_;
     size_t offset_ = 0;
 
     template <typename>
     friend class Tensor;
 
     template <std::size_t... Is, typename... Args>
-    Tensor(const Tensor& orig, std::index_sequence<Is...>, Args&&... args) {
-        data_ = orig.data_;
+    Tensor(const Tensor& orig, std::index_sequence<Is...>, Args&&... args) : data_(orig.data_) {
         offset_ = orig.offset_;
         // Fold expression to process all arguments with overloads
         ((process_get_arg(orig, Is, args)), ...);
@@ -684,147 +617,167 @@ protected:
 
     // Write element wise op(a, b) into this object
     // Do this to avoid instantiating many intermediate Tensors in our recursion, which causes a lot of data copying
-    template <typename T1, typename T2, typename Func>
-    void apply_binary_helper(const Tensor<T1>& a, const Tensor<T2>& b, Func op, int index, int aIndex, int bIndex, int axis) {
-        if (axis == (int)shape_.size()) {
-            data_[index] = op(a.data_[aIndex], b.data_[bIndex]);
-            return;
-        }
+    // template <typename T1, typename T2, typename Func>
+    // void apply_binary_helper(const Tensor<T1>& a, const Tensor<T2>& b, Func op, int index, int aIndex, int bIndex, int axis) {
+    //     if (axis == (int)shape_.size()) {
+    //         data_[index] = op(a.data_[aIndex], b.data_[bIndex]);
+    //         return;
+    //     }
 
-        int aAxis = axis + a.shape_.size() - shape_.size();
-        if (aAxis >= 0 && a.shape_[aAxis] == 1) {
-            aAxis = -1;
-        }
+    //     int aAxis = axis + a.shape_.size() - shape_.size();
+    //     if (aAxis >= 0 && a.shape_[aAxis] == 1) {
+    //         aAxis = -1;
+    //     }
         
-        int bAxis = axis + b.shape_.size() - shape_.size();
-        if (bAxis >= 0 && b.shape_[bAxis] == 1) {
-            bAxis = -1;
-        }
+    //     int bAxis = axis + b.shape_.size() - shape_.size();
+    //     if (bAxis >= 0 && b.shape_[bAxis] == 1) {
+    //         bAxis = -1;
+    //     }
 
-        for (size_t i = 0; i < shape_[axis]; i++) {
-            apply_binary_helper(
-                a, b, op, 
-                index + strides_[axis] * i, 
-                aIndex + (aAxis >= 0 ? a.strides_[aAxis] * i : 0),
-                bIndex + (bAxis >= 0 ? b.strides_[bAxis] * i : 0),
-                axis + 1
-            );
-        }
-    }
+    //     for (size_t i = 0; i < shape_[axis]; i++) {
+    //         apply_binary_helper(
+    //             a, b, op, 
+    //             index + strides_[axis] * i, 
+    //             aIndex + (aAxis >= 0 ? a.strides_[aAxis] * i : 0),
+    //             bIndex + (bAxis >= 0 ? b.strides_[bAxis] * i : 0),
+    //             axis + 1
+    //         );
+    //     }
+    // }
 
     // Write element wise op(a, b) into this object
     // Do this to avoid instantiating many intermediate Tensors in our recursion, which causes a lot of data copying
-    template <typename Func>
-    void apply_binary_inplace_helper(const Tensor& other, Func op, int index, int otherIndex, int axis) {
-        if (axis == (int)shape_.size()) {
-            op(data_[index], other.data_[otherIndex]);
-            return;
-        }
+    // template <typename Func>
+    // void apply_binary_inplace_helper(const Tensor& other, Func op, int index, int otherIndex, int axis) {
+    //     if (axis == (int)shape_.size()) {
+    //         op(data_[index], other.data_[otherIndex]);
+    //         return;
+    //     }
         
-        int otherAxis = axis + other.shape_.size() - shape_.size();
-        if (otherAxis >= 0 && other.shape_[otherAxis] == 1) {
-            otherAxis = -1;
-        }
+    //     int otherAxis = axis + other.shape_.size() - shape_.size();
+    //     if (otherAxis >= 0 && other.shape_[otherAxis] == 1) {
+    //         otherAxis = -1;
+    //     }
 
-        for (size_t i = 0; i < shape_[axis]; i++) {
-            apply_binary_inplace_helper(
-                other, op, 
-                index + strides_[axis] * i, 
-                otherIndex + (otherAxis >= 0 ? other.strides_[otherAxis] * i : 0),
-                axis + 1
-            );
-        }
-    }
+    //     for (size_t i = 0; i < shape_[axis]; i++) {
+    //         apply_binary_inplace_helper(
+    //             other, op, 
+    //             index + strides_[axis] * i, 
+    //             otherIndex + (otherAxis >= 0 ? other.strides_[otherAxis] * i : 0),
+    //             axis + 1
+    //         );
+    //     }
+    // }
 
     // Apply op elementwise to other and copy into this. Guaranteed that this tensor and other are the same shape
-    template <typename V, typename Func>
-    void apply_unary_helper(const Tensor<V>& other, Func op, int index, int otherIndex, int axis) {
-        if (axis == (int)shape_.size()) {
-            data_[index] = op(other.data_[otherIndex]);
-            return;
-        }
+    // template <typename V, typename Func>
+    // void apply_unary_helper(const Tensor<V>& other, Func op, int index, int otherIndex, int axis) {
+    //     if (axis == (int)shape_.size()) {
+    //         data_[index] = op(other.data_[otherIndex]);
+    //         return;
+    //     }
 
-        for (size_t i = 0; i < shape_[axis]; i++) {
-            apply_unary_helper(other, op, index + strides_[axis] * i, otherIndex + other.strides_[axis] * i, axis + 1);
-        }
-    }
+    //     for (size_t i = 0; i < shape_[axis]; i++) {
+    //         apply_unary_helper(other, op, index + strides_[axis] * i, otherIndex + other.strides_[axis] * i, axis + 1);
+    //     }
+    // }
 
     // Apply elementwise
-    template <typename Func>
-    void apply_unary_inplace_helper(Func op, int index, int axis) {
-        if (axis == (int)shape_.size()) {
-            op(data_[index]);
-            return;
-        }
+    // template <typename Func>
+    // void apply_unary_inplace_helper(Func op, int index, int axis) {
+    //     if (axis == (int)shape_.size()) {
+    //         op(data_[index]);
+    //         return;
+    //     }
 
-        for (size_t i = 0; i < shape_[axis]; i++) {
-            apply_unary_inplace_helper(op, index + strides_[axis] * i, axis + 1);
-        }
-    }
+    //     for (size_t i = 0; i < shape_[axis]; i++) {
+    //         apply_unary_inplace_helper(op, index + strides_[axis] * i, axis + 1);
+    //     }
+    // }
 
     // Func should have some signature op(U, U) -> U
-    template <typename Func>
-    void reduce_helper(const Tensor& other, const std::vector<bool>& reduceAxis, 
-                       int index, int otherIndex, int axis, int otherAxis, Func op) const {
-        if (otherAxis == (int)other.shape_.size()) {
-            data_[index] = op(data_[index], other.data_[otherIndex]);
-            return;
-        }        
+    // template <typename Func>
+    // void reduce_helper(const Tensor& other, const std::vector<bool>& reduceAxis, 
+    //                    int index, int otherIndex, int axis, int otherAxis, Func op) const {
+    //     if (otherAxis == (int)other.shape_.size()) {
+    //         data_[index] = op(data_[index], other.data_[otherIndex]);
+    //         return;
+    //     }        
 
-        if (reduceAxis[otherAxis]) {
-            for (size_t i = 0; i < other.shape_[otherAxis]; i++) {
-                reduce_helper(other, reduceAxis, 
-                              index, otherIndex + other.strides_[otherAxis] * i, 
-                              axis, otherAxis + 1, op);
-            }
-        }
-        else {
-            assert(shape_[axis] == other.shape_[otherAxis]);
-            for (size_t i = 0; i < other.shape_[otherAxis]; i++) {
-                reduce_helper(other, reduceAxis, 
-                              index + strides_[axis] * i, otherIndex + other.strides_[otherAxis] * i, 
-                              axis + 1, otherAxis + 1, op);
-            }
-        }
-    }
+    //     if (reduceAxis[otherAxis]) {
+    //         for (size_t i = 0; i < other.shape_[otherAxis]; i++) {
+    //             reduce_helper(other, reduceAxis, 
+    //                           index, otherIndex + other.strides_[otherAxis] * i, 
+    //                           axis, otherAxis + 1, op);
+    //         }
+    //     }
+    //     else {
+    //         assert(shape_[axis] == other.shape_[otherAxis]);
+    //         for (size_t i = 0; i < other.shape_[otherAxis]; i++) {
+    //             reduce_helper(other, reduceAxis, 
+    //                           index + strides_[axis] * i, otherIndex + other.strides_[otherAxis] * i, 
+    //                           axis + 1, otherAxis + 1, op);
+    //         }
+    //     }
+    // }
 
-    void matmul_helper(const Tensor& a, const Tensor& b, int index, int aIndex, int bIndex, int axis) {
-        int aAxis = axis + a.shape_.size() - shape_.size();
-        int bAxis = axis + b.shape_.size() - shape_.size();
+    // void matmul_helper(const Tensor& a, const Tensor& b, int index, int aIndex, int bIndex, int axis) {
+    //     int aAxis = axis + a.shape_.size() - shape_.size();
+    //     int bAxis = axis + b.shape_.size() - shape_.size();
         
-        if (axis == (int)shape_.size() - 2) {
-            // Actual matmul here
-            for (size_t i = 0; i < shape_[axis]; i++) {
-                for (size_t j = 0; j < shape_[axis + 1]; j++) {
-                    for (size_t k = 0; k < a.shape_[aAxis + 1]; k++) {
-                        data_[index + strides_[axis] * i + strides_[axis + 1] * j] += 
-                            a.data_[aIndex + a.strides_[aAxis] * i + a.strides_[aAxis + 1] * k] * 
-                            b.data_[bIndex + b.strides_[bAxis] * k + b.strides_[bAxis + 1] * j];
-                    }
-                }
-            }
-            return;
-        }
+    //     if (axis == (int)shape_.size() - 2) {
+    //         // Actual matmul here
+    //         for (size_t i = 0; i < shape_[axis]; i++) {
+    //             for (size_t j = 0; j < shape_[axis + 1]; j++) {
+    //                 for (size_t k = 0; k < a.shape_[aAxis + 1]; k++) {
+    //                     data_[index + strides_[axis] * i + strides_[axis + 1] * j] += 
+    //                         a.data_[aIndex + a.strides_[aAxis] * i + a.strides_[aAxis + 1] * k] * 
+    //                         b.data_[bIndex + b.strides_[bAxis] * k + b.strides_[bAxis + 1] * j];
+    //                 }
+    //             }
+    //         }
+    //         return;
+    //     }
 
-        if (aAxis >= 0 && a.shape_[aAxis] == 1) {
-            aAxis = -1;
-        }
+    //     if (aAxis >= 0 && a.shape_[aAxis] == 1) {
+    //         aAxis = -1;
+    //     }
 
-        if (bAxis >= 0 && b.shape_[bAxis] == 1) {
-            bAxis = -1;
-        }
+    //     if (bAxis >= 0 && b.shape_[bAxis] == 1) {
+    //         bAxis = -1;
+    //     }
 
-        for (size_t i = 0; i < shape_[axis]; i++) {
-            matmul_helper(
-                a, b, 
-                index + strides_[axis] * i, 
-                aIndex + (aAxis >= 0 ? a.strides_[aAxis] * i : 0),
-                bIndex + (bAxis >= 0 ? b.strides_[bAxis] * i : 0),
-                axis + 1
-            );
-        }
-    }
+    //     for (size_t i = 0; i < shape_[axis]; i++) {
+    //         matmul_helper(
+    //             a, b, 
+    //             index + strides_[axis] * i, 
+    //             aIndex + (aAxis >= 0 ? a.strides_[aAxis] * i : 0),
+    //             bIndex + (bAxis >= 0 ? b.strides_[bAxis] * i : 0),
+    //             axis + 1
+    //         );
+    //     }
+    // }
 };
+
+template <typename U>
+Tensor<U> operator+(const Tensor<U>& a, const Tensor<U>& b) {
+    return a.apply_binary(b, backend::BinOp::Add);
+}
+
+template <typename U>
+Tensor<U> operator-(const Tensor<U>& a, const Tensor<U>& b) {
+    return a.apply_binary(b, backend::BinOp::Sub);
+}
+
+template <typename U>
+Tensor<U> operator*(const Tensor<U>& a, const Tensor<U>& b) {
+    return a.apply_binary(b, backend::BinOp::Mul);
+}
+
+template <typename U>
+Tensor<U> operator/(const Tensor<U>& a, const Tensor<U>& b) {
+    return a.apply_binary(b, backend::BinOp::Div);
+}
 
 template <typename U>
 Tensor<U> operator+(U a, const Tensor<U>& b) {
@@ -833,7 +786,7 @@ Tensor<U> operator+(U a, const Tensor<U>& b) {
 
 template <typename U>
 Tensor<U> operator-(U a, const Tensor<U>& b) {
-    return b.apply_unary([a](U b) { return a - b; });
+    return b.apply_binary(a, backend::BinOp::SubBy);
 }
 
 template <typename U>
@@ -843,7 +796,17 @@ Tensor<U> operator*(U a, const Tensor<U>& b) {
 
 template <typename U>
 Tensor<U> operator/(U a, const Tensor<U>& b) {
-    return b.apply_unary([a](U b) { return a / b; });
+    return b.apply_binary(a, backend::BinOp::DivBy);
+}
+
+template <typename U>
+Tensor<bool> operator==(const Tensor<U>& a, const Tensor<U>& b) {
+    return a.template apply_binary<bool>(b, backend::BinOp::Eq);
+}
+
+template <typename U>
+Tensor<bool> operator==(U a, const Tensor<U>& b) {
+    return b == a;
 }
 
 } // namespace linalg
