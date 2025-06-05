@@ -111,7 +111,7 @@ public:
         }
     }
 
-    template <typename U, typename V>
+    template <typename U>
     void apply_unary(const Shape& shape, const Strides& rStrides, size_t rOffset,
                      DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset,
                      UnOp op) {

@@ -173,8 +173,8 @@ public:
 
     // Apply some operation on some tensor, returning a new one
     // Func should have signature op(U) -> R
-    template <typename R>
-    Tensor<R> apply_unary(backend::BinOp op) const {
+    template <typename R = U>
+    Tensor<R> apply_unary(backend::UnOp op) const {
         Tensor<R> res = Tensor<R>(shape_);
         // We can const_cast because we know res != this
         res.data_->apply_unary(shape_, res.strides_, res.offset_,
@@ -185,7 +185,7 @@ public:
 
     // Apply some operation on some tensor, modifying it in place
     // Func should have signature op(U&) -> void
-    Tensor& apply_unary_inplace(backend::BinOp op) {
+    Tensor& apply_unary_inplace(backend::UnOp op) {
         data_->apply_unary(shape_, strides_, offset_,
                            data_.get(), strides_, offset_, 
                            op);

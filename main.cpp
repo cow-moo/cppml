@@ -19,8 +19,9 @@ int main() {
     (a == b).print();
     a.print();
     b.print();
-    Tensor<float> c = a - 1.0f;
+    Tensor<float> c = a.exp();
     c.print();
+    c.log().print();
 
     //std::cout << sizeof(backend::CpuSingleThreadBuffer<float>) << " " << sizeof(backend::DeviceBuffer<float>) << std::endl;
 
