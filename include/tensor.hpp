@@ -156,7 +156,7 @@ public:
 
         data_->apply_binary(shape_, strides_, offset_,
                             data_.get(), strides_, offset_,
-                            other.data->get(), other.strides_, other.offset_,
+                            const_cast<backend::DeviceBuffer<U>*>(other.data_.get()), other.strides_, other.offset_,
                             op);
 
         return *this;

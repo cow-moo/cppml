@@ -16,12 +16,14 @@ using autodiff::ComputationGraph;
 int main() {
     Tensor<float> a({{1, 2, 3}, {4, 5, 6}});
     Tensor<float> b({{1, 3, 5}, {7, 9, 11}});
-    (a == b).print();
+    a /= 4.0f;
     a.print();
-    b.print();
-    Tensor<float> c = a.exp();
-    c.print();
-    c.log().print();
+    // (a == b).print();
+    // a.print();
+    // b.print();
+    // Tensor<float> c = a.exp();
+    // c.print();
+    // c.log().print();
 
     //std::cout << sizeof(backend::CpuSingleThreadBuffer<float>) << " " << sizeof(backend::DeviceBuffer<float>) << std::endl;
 
