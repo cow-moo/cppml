@@ -35,13 +35,6 @@ struct Range {
 template <typename U = float>
 class Tensor {
 public:
-    // Constructor for 1D tensor
-    // Tensor(const std::initializer_list<U>& values, backend::BackendType type) : data_(backend::make_shared_buffer(values, type)) {
-    //     //memcpy(data_.get(), values.begin(), values.size() * sizeof(U));
-    //     shape_ = {values.size()};
-    //     strides_ = {1};
-    // }
-
     struct NestedInitializer;
 
     Tensor(const NestedInitializer& initializer, backend::BackendType type = DEFAULT_BACKEND) : Tensor(initializer.shape, type) {
@@ -62,7 +55,7 @@ public:
     Tensor(const std::initializer_list<U>& list, backend::BackendType type = DEFAULT_BACKEND)
         : Tensor(NestedInitializer(list), type) {}
 
-    Tensor(const Tensor& other) 
+    Tensor(const Tensor& other)
         : data_(other.data_), shape_(other.shape_), strides_(other.strides_), offset_(other.offset_) {}
 
     // Elementwise assignment
@@ -87,7 +80,6 @@ public:
     static Tensor zeros(const Shape& shape) {
         Tensor res(shape);
         res = 0;
-        //std::fill(res.data_.get(), res.data_.get(), 0);
         return res;
     }
 
@@ -122,14 +114,14 @@ public:
 
     template <typename R = U, typename V = U>
     Tensor<R> apply_binary(const Tensor<V>& other, backend::BinOp op) const {
-        Shape shape = Shape::broadcast(shape_, other.shape_);
-
+        auto [shape, strides, otherStrides] = Shape::broadcast(shape_, strides_, other.shape_, other.strides_);
+        
         Tensor<R> res(shape);
 
         // We can const_cast because we know res != this and other
         res.data_->apply_binary(shape, res.strides_, res.offset_,
-                                const_cast<backend::DeviceBuffer<U>*>(data_.get()), strides_, offset_,
-                                const_cast<backend::DeviceBuffer<V>*>(other.data_.get()), other.strides_, other.offset_,
+                                const_cast<backend::DeviceBuffer<U>*>(data_.get()), strides, offset_,
+                                const_cast<backend::DeviceBuffer<V>*>(other.data_.get()), otherStrides, other.offset_,
                                 op);
 
         return res;
@@ -149,14 +141,16 @@ public:
     // Func should have some signature op(U&, U) -> void
     template <typename V = U>
     Tensor& apply_binary_inplace(const Tensor<V>& other, backend::BinOp op) {
-        if (shape_ != Shape::broadcast(this->shape_, other.shape_)) {
+        auto [shape, _, otherStrides] = Shape::broadcast(shape_, strides_, other.shape_, other.strides_);
+        
+        if (shape_ != shape) {
             std::cout << this->shape_ << " " << other.shape_ << std::endl;
             throw std::invalid_argument("Broadcast failed.");
         }
 
         data_->apply_binary(shape_, strides_, offset_,
                             data_.get(), strides_, offset_,
-                            const_cast<backend::DeviceBuffer<U>*>(other.data_.get()), other.strides_, other.offset_,
+                            const_cast<backend::DeviceBuffer<U>*>(other.data_.get()), otherStrides, other.offset_,
                             op);
 
         return *this;
@@ -307,7 +301,7 @@ public:
 
         size_t outer = numel() / shape_.back();
         Tensor reshaped = reshape({outer, shape_.back()});
-        Tensor<size_t> res(Tensor<size_t>::zeros({outer}));
+        Tensor<size_t> res(Tensor<size_t>::zeros(Shape{outer}));
 
         for (size_t i = 0; i < outer; i++) {
             size_t maxIdx = 0;
@@ -339,8 +333,8 @@ public:
             std::cout << a.shape_ << " " << b.shape_ << std::endl;
             throw std::invalid_argument("Invalid shape for matmul.");
         }
-        Shape shape = Shape::broadcast(std::vector<size_t>(aa.shape_.begin(), aa.shape_.begin() + aa.shape_.size() - 2), 
-                                                    std::vector<size_t>(bb.shape_.begin(), bb.shape_.begin() + bb.shape_.size() - 2));
+        Shape shape = Shape::broadcast(Shape(std::vector<size_t>(aa.shape_.begin(), aa.shape_.begin() + aa.shape_.size() - 2)), 
+                                        Shape(std::vector<size_t>(bb.shape_.begin(), bb.shape_.begin() + bb.shape_.size() - 2)));
         shape.push_back(aa.shape_[aa.shape_.size() - 2]);
         shape.push_back(bb.shape_.back());
 
@@ -511,10 +505,6 @@ public:
         std::cout << std::endl;
     }
 
-    Tensor broadcast_to(const Shape& shape) {
-
-    }
-
     Tensor broadcast_reduce_to(const Shape& shape) {
         std::vector<int> broadcastedAxes;
         for (size_t i = 0; i < this->shape_.size(); i++) {
@@ -553,7 +543,6 @@ public:
 private:
     // Should be fixed on construction
     backend::SharedBuffer<U> data_;
-    //std::shared_ptr<U[]> data_;
     Shape shape_;
     Strides strides_;
     size_t offset_ = 0;
@@ -614,86 +603,6 @@ private:
         strides_.push_back(orig.strides_[idx] * range.step);
         offset_ += orig.strides_[idx] * range.start;
     }
-
-    // Write element wise op(a, b) into this object
-    // Do this to avoid instantiating many intermediate Tensors in our recursion, which causes a lot of data copying
-    // template <typename T1, typename T2, typename Func>
-    // void apply_binary_helper(const Tensor<T1>& a, const Tensor<T2>& b, Func op, int index, int aIndex, int bIndex, int axis) {
-    //     if (axis == (int)shape_.size()) {
-    //         data_[index] = op(a.data_[aIndex], b.data_[bIndex]);
-    //         return;
-    //     }
-
-    //     int aAxis = axis + a.shape_.size() - shape_.size();
-    //     if (aAxis >= 0 && a.shape_[aAxis] == 1) {
-    //         aAxis = -1;
-    //     }
-        
-    //     int bAxis = axis + b.shape_.size() - shape_.size();
-    //     if (bAxis >= 0 && b.shape_[bAxis] == 1) {
-    //         bAxis = -1;
-    //     }
-
-    //     for (size_t i = 0; i < shape_[axis]; i++) {
-    //         apply_binary_helper(
-    //             a, b, op, 
-    //             index + strides_[axis] * i, 
-    //             aIndex + (aAxis >= 0 ? a.strides_[aAxis] * i : 0),
-    //             bIndex + (bAxis >= 0 ? b.strides_[bAxis] * i : 0),
-    //             axis + 1
-    //         );
-    //     }
-    // }
-
-    // Write element wise op(a, b) into this object
-    // Do this to avoid instantiating many intermediate Tensors in our recursion, which causes a lot of data copying
-    // template <typename Func>
-    // void apply_binary_inplace_helper(const Tensor& other, Func op, int index, int otherIndex, int axis) {
-    //     if (axis == (int)shape_.size()) {
-    //         op(data_[index], other.data_[otherIndex]);
-    //         return;
-    //     }
-        
-    //     int otherAxis = axis + other.shape_.size() - shape_.size();
-    //     if (otherAxis >= 0 && other.shape_[otherAxis] == 1) {
-    //         otherAxis = -1;
-    //     }
-
-    //     for (size_t i = 0; i < shape_[axis]; i++) {
-    //         apply_binary_inplace_helper(
-    //             other, op, 
-    //             index + strides_[axis] * i, 
-    //             otherIndex + (otherAxis >= 0 ? other.strides_[otherAxis] * i : 0),
-    //             axis + 1
-    //         );
-    //     }
-    // }
-
-    // Apply op elementwise to other and copy into this. Guaranteed that this tensor and other are the same shape
-    // template <typename V, typename Func>
-    // void apply_unary_helper(const Tensor<V>& other, Func op, int index, int otherIndex, int axis) {
-    //     if (axis == (int)shape_.size()) {
-    //         data_[index] = op(other.data_[otherIndex]);
-    //         return;
-    //     }
-
-    //     for (size_t i = 0; i < shape_[axis]; i++) {
-    //         apply_unary_helper(other, op, index + strides_[axis] * i, otherIndex + other.strides_[axis] * i, axis + 1);
-    //     }
-    // }
-
-    // Apply elementwise
-    // template <typename Func>
-    // void apply_unary_inplace_helper(Func op, int index, int axis) {
-    //     if (axis == (int)shape_.size()) {
-    //         op(data_[index]);
-    //         return;
-    //     }
-
-    //     for (size_t i = 0; i < shape_[axis]; i++) {
-    //         apply_unary_inplace_helper(op, index + strides_[axis] * i, axis + 1);
-    //     }
-    // }
 
     // Func should have some signature op(U, U) -> U
     // template <typename Func>

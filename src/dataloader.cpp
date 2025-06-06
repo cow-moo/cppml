@@ -23,7 +23,7 @@ bool MNISTDataset::load_images(const std::string& path) {
 
     images.reserve(num_images);
     for (uint32_t i = 0; i < num_images; ++i) {
-        images.emplace_back(Tensor<float>::zeros({28 * 28}));
+        images.emplace_back(Tensor<float>::zeros(Shape{28 * 28}));
         //Tensor<float> img = Tensor<float>::zeros({1, 28 * 28});
         for (int j = 0; j < 28 * 28; ++j) {
             uint8_t byte;

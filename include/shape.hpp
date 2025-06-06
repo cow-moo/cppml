@@ -11,7 +11,6 @@ namespace linalg {
 
 using Strides = std::vector<size_t>;
 
-
 struct Shape {
     std::vector<size_t> dims;
 
@@ -99,6 +98,48 @@ struct Shape {
         }
         std::reverse(res.begin(), res.end());
         return Shape{res};
+    }
+
+    static auto broadcast(const Shape& a, const Strides& aStrides, const Shape& b, const Strides& bStrides) {
+        Shape res;
+        Strides aRes, bRes;
+        for (size_t i = 0; i < std::max(a.size(), b.size()); i++) {
+            if (i >= a.size()) {
+                res.push_back(b[b.size() - 1 - i]);
+                aRes.push_back(0);
+                bRes.push_back(bStrides[b.size() - 1 - i]);
+            }
+            else if (i >= b.size()) {
+                res.push_back(a[a.size() - 1 - i]);
+                aRes.push_back(aStrides[a.size() - 1 - i]);
+                bRes.push_back(0);
+            }
+            else if (a[a.size() - 1 - i] == 1) {
+                res.push_back(b[b.size() - 1 - i]);
+                aRes.push_back(0);
+                bRes.push_back(bStrides[b.size() - 1 - i]);
+            }
+            else if (b[b.size() - 1 - i] == 1) {
+                res.push_back(a[a.size() - 1 - i]);
+                aRes.push_back(aStrides[a.size() - 1 - i]);
+                bRes.push_back(0);
+            }
+            else if (a[a.size() - 1 - i] == b[b.size() - 1 - i]) {
+                res.push_back(a[a.size() - 1 - i]);
+                aRes.push_back(aStrides[a.size() - 1 - i]);
+                bRes.push_back(bStrides[b.size() - 1 - i]);
+            }
+            else {
+                std::cout << a << " " << b << std::endl;
+                throw std::invalid_argument("Broadcast failed.");
+            }
+        }
+        std::reverse(res.begin(), res.end());
+        std::reverse(aRes.begin(), aRes.end());
+        std::reverse(bRes.begin(), bRes.end());
+
+        assert(res.size() == aRes.size() && res.size() == bRes.size());
+        return std::tuple{res, aRes, bRes};
     }
 
     friend std::ostream& operator<<(std::ostream& os, const Shape& t) {

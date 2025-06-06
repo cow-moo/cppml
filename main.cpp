@@ -15,9 +15,20 @@ using autodiff::ComputationGraph;
 
 int main() {
     Tensor<float> a({{1, 2, 3}, {4, 5, 6}});
-    Tensor<float> b({{1, 3, 5}, {7, 9, 11}});
-    a /= 4.0f;
-    a.print();
+    //Tensor<float> b({{1, 3, 5}, {7, 9, 11}});
+    Tensor<float> b({5, 1, 50});
+    Tensor<float> c({10, 100});
+    c.assign(c.reshape(Shape{2, 1}));
+
+    (a + c).print();
+    (a + b).print();
+    (b + c).print();
+    //(b * a).print();
+    //a *= b;
+    //a.print();
+    // b.print();
+    // a /= 4.0f;
+    // a.print();
     // (a == b).print();
     // a.print();
     // b.print();
