@@ -14,7 +14,7 @@ using autodiff::Expression;
 using autodiff::ComputationGraph;
 
 int main() {
-    Tensor<float> a({{1, 2, 3}, {4, 5, 6}});
+    Tensor<float> a({{1, 20, 3}, {4, 5, 6}});
     //Tensor<float> b({{1, 3, 5}, {7, 9, 11}});
     Tensor<float> b({5, 1, 50});
     Tensor<float> c({10, 100});
@@ -25,8 +25,12 @@ int main() {
     // (b + c).print();
 
     //a.max({1}, false).print();
-    a.softmax(0).print();
-    a.log_softmax(0).exp().print();
+    // a.softmax(0).print();
+    // a.log_softmax(0).exp().print();
+
+    a.argmin(1, false).print();
+
+    a.min({1}).print();
 
     //(b * a).print();
     //a *= b;

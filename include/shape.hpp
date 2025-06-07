@@ -63,6 +63,22 @@ struct Shape {
     size_t& operator[](size_t i) { return dims[i]; }
     const size_t& operator[](size_t i) const { return dims[i]; }
 
+    size_t& operator[](int i) {
+        if (i < 0) i += dims.size();
+        if (i < 0 || i >= (int)dims.size()) {
+            throw std::invalid_argument("Axis index out of bounds.");
+        }
+        return dims[i];
+    }
+
+    const size_t& operator[](int i) const {
+        if (i < 0) i += dims.size();
+        if (i < 0 || i >= (int)dims.size()) {
+            throw std::invalid_argument("Axis index out of bounds.");
+        }
+        return dims[i];
+    }
+
     size_t size() const { return dims.size(); }
 
     size_t numel() const {

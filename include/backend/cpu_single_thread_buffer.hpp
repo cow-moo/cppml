@@ -2,6 +2,7 @@
 #define BACKEND_CPU_SINGLE_THREAD_BUFFER_H
 
 #include "backend/base.hpp"
+#include <type_traits>
 
 namespace backend {
 
@@ -32,6 +33,15 @@ template <typename T, typename U>
 static constexpr UnOpFn<T, U> unop_table[] = {
     [](U x) { return std::exp(x); },
     [](U x) { return std::log(x); },
+};
+
+template <typename U>
+using ArgRedOpFn = void(*)(std::pair<U, size_t>&, std::pair<U, size_t>);
+
+template <typename U>
+static constexpr ArgRedOpFn<U> argredop_table[] = {
+    [](std::pair<U, size_t>& x, std::pair<U, size_t> y) { x = std::max(x, y); },
+    [](std::pair<U, size_t>& x, std::pair<U, size_t> y) { x = std::min(x, y); },
 };
 
 template <typename T>
@@ -127,6 +137,33 @@ public:
         for (size_t i = 0; i < shape.numel(); i++) {
             *rIt = fn(*otherIt);
             ++rIt; ++otherIt;
+        }
+    }
+
+    // Reduce on last dimension
+    template <typename U>
+    void arg_reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
+                    const DeviceBuffer<U>* other, 
+                    const Shape& otherShape, const Strides& otherStrides, size_t otherOffset,
+                    ArgRedOp op) {
+        static_assert(std::is_same_v<T, size_t>, "arg_reduce only works with T = size_t");
+        assert(other->backend_type() == BackendType::CpuSingleThread);
+        auto otherIt = StridedIterator<U>(static_cast<const CpuSingleThreadBuffer<U>*>(other)->data_, 
+                                          otherShape, otherStrides, otherOffset);
+        auto rIt = StridedIterator<T>(data_, rShape, rStrides, rOffset);
+
+        auto fn = argredop_table<U>[static_cast<size_t>(op)];
+
+        size_t innerDim = otherShape.back();
+        for (size_t i = 0; i < rShape.numel(); i++) {
+            std::pair<U, size_t> cur {*otherIt, 0};
+            ++otherIt;
+            for (size_t j = 1; j < innerDim; j++) {
+                fn(cur, {*otherIt, j});
+                ++otherIt;
+            }
+            *rIt = cur.second;
+            ++rIt;
         }
     }
 

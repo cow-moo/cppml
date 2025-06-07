@@ -33,6 +33,7 @@ enum class UnOp {
 
 enum class ArgRedOp {
     Max,
+    Min,
 };
 
 template <typename T> class SharedBuffer;
@@ -77,6 +78,16 @@ public:
                      DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset,
                      UnOp op) {
         BACKEND_DISPATCH(apply_unary(shape, rStrides, rOffset, other, otherStrides, otherOffset, op));
+    }
+
+    // Reduce on last dimension
+    template <typename U>
+    void arg_reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
+                    const DeviceBuffer<U>* other, 
+                    const Shape& otherShape, const Strides& otherStrides, size_t otherOffset,
+                    ArgRedOp op) {
+        static_assert(std::is_same_v<T, size_t>, "arg_reduce only works with T = size_t");
+        BACKEND_DISPATCH(arg_reduce(rShape, rStrides, rOffset, other, otherShape, otherStrides, otherOffset, op));
     }
 
 protected:

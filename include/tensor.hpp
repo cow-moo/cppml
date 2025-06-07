@@ -194,12 +194,6 @@ public:
         Shape newShape(shape_);
 
         for (auto x : axes) {
-            if (x < 0) x += shape_.size();
-            if (x < 0 || x >= (int)shape_.size()) {
-                throw std::invalid_argument("Axis index out of bounds.");
-            }
-
-            //reduceAxis[x] = true;
             newShape[x] = 1;
         }
         
@@ -221,6 +215,30 @@ public:
             return res;
         else
             return res.squeeze(axes);
+    }
+
+    Tensor<size_t> arg_reduce(int axis, backend::ArgRedOp op, bool keepDim) const {
+        assert(shape_.size() > 0);
+
+        if (axis < 0) axis += shape_.size();
+
+        Shape shape(shape_);
+        Shape strides(strides_);
+        std::swap(shape[-1], shape[axis]);
+        std::swap(strides[-1], strides[axis]);
+
+        Shape newShape(shape);
+        newShape.erase(newShape.end() - 1);
+        Tensor<size_t> res(newShape);
+        res.data_->arg_reduce(newShape, res.strides_, res.offset_,
+                              data_.get(), 
+                              shape, strides, offset_,
+                              op);
+
+        if (keepDim)
+            return res.unsqueeze(axis);
+        else
+            return res;
     }
 
     Tensor operator-() const {
@@ -303,30 +321,17 @@ public:
                       backend::BinOp::Max, keepDims);
     }
 
-    // Argmaxes over last axis
-    Tensor<size_t> argmax() const {
-        assert(shape_.size() > 0);
+    Tensor min(const std::vector<int>& axes, bool keepDims = false) const {
+        return reduce(axes, std::numeric_limits<U>::max(), 
+                      backend::BinOp::Min, keepDims);
+    }
 
-        size_t outer = numel() / shape_.back();
-        Tensor reshaped = reshape({outer, shape_.back()});
-        Tensor<size_t> res(Tensor<size_t>::zeros(Shape{outer}));
+    Tensor<size_t> argmax(int axis = -1, bool keepDim = false) const {
+        return arg_reduce(axis, backend::ArgRedOp::Max, keepDim);
+    }
 
-        for (size_t i = 0; i < outer; i++) {
-            size_t maxIdx = 0;
-            U maxVal = reshaped[i, 0];
-            for (size_t j = 1; j < shape_.back(); j++) {
-                U val = reshaped[i, j];
-                if (val > maxVal) {
-                    maxIdx = j;
-                    maxVal = val;
-                }
-            }
-            res[i] = maxIdx;
-        }
-
-        Shape newShape = shape_;
-        newShape.pop_back();
-        return res.reshape(newShape);
+    Tensor<size_t> argmin(int axis = -1, bool keepDim = false) const {
+        return arg_reduce(axis, backend::ArgRedOp::Min, keepDim);
     }
 
     // Broadcasts first n-2 dimensions
