@@ -186,6 +186,43 @@ public:
         return *this;
     }
 
+    // Allows duplicate axes and ignores them
+    Tensor reduce(const std::vector<int>& axes, U identity, backend::BinOp op, bool keepDims) const {
+        if (axes.size() == 0)
+            return copy();
+
+        Shape newShape(shape_);
+
+        for (auto x : axes) {
+            if (x < 0) x += shape_.size();
+            if (x < 0 || x >= (int)shape_.size()) {
+                throw std::invalid_argument("Axis index out of bounds.");
+            }
+
+            //reduceAxis[x] = true;
+            newShape[x] = 1;
+        }
+        
+        Tensor res(newShape);
+        res = identity;
+
+        Strides strides(res.strides_);
+        for (auto x : axes) {
+            if (x < 0) x += shape_.size();
+            strides[x] = 0;
+        }
+
+        res.data_->apply_binary(shape_, strides, res.offset_,
+                                res.data_.get(), strides, res.offset_,
+                                const_cast<backend::DeviceBuffer<U>*>(data_.get()), strides_, offset_,
+                                op);
+
+        if (keepDims)
+            return res;
+        else
+            return res.squeeze(axes);
+    }
+
     Tensor operator-() const {
         return *this * (U)-1;
     }
@@ -249,39 +286,10 @@ public:
     Tensor<bool> operator==(U other) const {
         return apply_binary<bool>(other, backend::BinOp::Eq);
     }
-
-    // Allows duplicate axes and ignores them
-    template <typename Func>
-    Tensor reduce(const std::vector<int>& axes, U identity, Func op) const {
-        if (axes.size() == 0)
-            return copy();
-
-        std::vector<bool> reduceAxis(shape_.size(), false);
-
-        for (auto x : axes) {
-            if (x < 0) x += shape_.size();
-            if (x < 0 || x >= (int)shape_.size()) {
-                throw std::invalid_argument("Axis index out of bounds.");
-            }
-
-            reduceAxis[x] = true;
-        }
-        
-        Shape newShape;
-        for (size_t i = 0; i < shape_.size(); i++) {
-            if (!reduceAxis[i])
-                newShape.push_back(shape_[i]);
-        }
-
-        Tensor res(newShape);
-        res = identity;
-        res.reduce_helper(*this, reduceAxis, 0, offset_, 0, 0, op);
-        return res;
-    }
     
     // Allows duplicates and ignores them
-    Tensor sum(const std::vector<int>& axes) const {
-        return reduce(axes, 0, [](U a, U b) { return a + b; });
+    Tensor sum(const std::vector<int>& axes, bool keepDims = false) const {
+        return reduce(axes, 0, backend::BinOp::Add, keepDims);
     }
 
     Tensor sum() const {
@@ -290,9 +298,9 @@ public:
         return sum(axes);
     }
 
-    Tensor max(const std::vector<int>& axes) const {
+    Tensor max(const std::vector<int>& axes, bool keepDims = false) const {
         return reduce(axes, std::numeric_limits<U>::lowest(), 
-                      [](U a, U b) { return std::max(a, b); });
+                      backend::BinOp::Max, keepDims);
     }
 
     // Argmaxes over last axis
@@ -355,17 +363,17 @@ public:
         return res;
     }
 
-    Tensor softmax() const {
-        Tensor scratch = max({-1}).unsqueeze(shape().size() - 1);
+    Tensor softmax(int axis = -1) const {
+        Tensor scratch = max({axis}, true);
         scratch.assign((*this) - scratch);
         scratch.assign(scratch.exp());
-        Tensor sum = scratch.sum({-1}).unsqueeze(shape().size() - 1);
+        Tensor sum = scratch.sum({axis}, true);
         return scratch / sum;
     }
 
-    Tensor log_softmax() const {
-        Tensor normalized = (*this) - max({-1}).unsqueeze(shape().size() - 1);
-        Tensor sum = normalized.exp().sum({-1}).unsqueeze(shape().size() - 1);
+    Tensor log_softmax(int axis = -1) const {
+        Tensor normalized = (*this) - max({axis}, true);
+        Tensor sum = normalized.exp().sum({axis}, true);
         return normalized - sum.log();
     }
 
@@ -455,6 +463,30 @@ public:
 
         Shape newShape = shape_;
         newShape.insert(newShape.begin() + axis, 1);
+
+        return reshape(newShape);
+    }
+
+    Tensor squeeze(const std::vector<int>& axes) const {
+        std::vector<bool> reduceAxis(shape_.size(), false);
+
+        for (auto x : axes) {
+            if (x < 0) x += shape_.size();
+            if (x < 0 || x >= (int)shape_.size()) {
+                throw std::invalid_argument("Axis index out of bounds.");
+            }
+
+            reduceAxis[x] = true;
+            if (shape_[x] != 1) {
+                throw std::invalid_argument("Squeeze failed.");
+            }
+        }
+
+        Shape newShape;
+        for (size_t i = 0; i < shape_.size(); i++) {
+            if (!reduceAxis[i])
+                newShape.push_back(shape_[i]);
+        }
 
         return reshape(newShape);
     }

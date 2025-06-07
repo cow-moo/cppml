@@ -22,11 +22,17 @@ enum class BinOp {
     DivBy, // b / a (for scalar / tensor)
     Eq,    // a == b
     Pass,  // b (for assignment)
+    Max,   // max(a, b)
+    Min,   // min(a, b)
 };
 
 enum class UnOp {
     Exp,
     Log,
+};
+
+enum class ArgRedOp {
+    Max,
 };
 
 template <typename T> class SharedBuffer;
@@ -72,7 +78,7 @@ public:
                      UnOp op) {
         BACKEND_DISPATCH(apply_unary(shape, rStrides, rOffset, other, otherStrides, otherOffset, op));
     }
-    
+
 protected:
     DeviceBuffer(BackendType type) : refs_(1), type_(type) {}
 

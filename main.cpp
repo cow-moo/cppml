@@ -20,9 +20,14 @@ int main() {
     Tensor<float> c({10, 100});
     c.assign(c.reshape(Shape{2, 1}));
 
-    (a + c).print();
-    (a + b).print();
-    (b + c).print();
+    // (a + c).print();
+    // (a + b).print();
+    // (b + c).print();
+
+    //a.max({1}, false).print();
+    a.softmax(0).print();
+    a.log_softmax(0).exp().print();
+
     //(b * a).print();
     //a *= b;
     //a.print();

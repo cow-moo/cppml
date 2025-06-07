@@ -13,14 +13,16 @@ using BinOpFn = T(*)(U, V);
 
 template <typename T, typename U, typename V>
 static constexpr BinOpFn<T, U, V> binop_table[] = {
-    [](U x, V y) -> T { return static_cast<T>(x + y); },     // BinOp::Add
-    [](U x, V y) -> T { return static_cast<T>(x - y); },     // BinOp::Sub
-    [](U x, V y) -> T { return static_cast<T>(y - x); },     // BinOp::SubBy
-    [](U x, V y) -> T { return static_cast<T>(x * y); },     // BinOp::Mul
-    [](U x, V y) -> T { return static_cast<T>(x / y); },     // BinOp::Div
-    [](U x, V y) -> T { return static_cast<T>(y / x); },     // BinOp::DivBy
-    [](U x, V y) -> T { return static_cast<T>(x == y); },    // BinOp::Eq
-    [](U, V y)   -> T { return static_cast<T>(y); },         // BinOp::Pass
+    [](U x, V y) -> T { return static_cast<T>(x + y); },          // BinOp::Add
+    [](U x, V y) -> T { return static_cast<T>(x - y); },          // BinOp::Sub
+    [](U x, V y) -> T { return static_cast<T>(y - x); },          // BinOp::SubBy
+    [](U x, V y) -> T { return static_cast<T>(x * y); },          // BinOp::Mul
+    [](U x, V y) -> T { return static_cast<T>(x / y); },          // BinOp::Div
+    [](U x, V y) -> T { return static_cast<T>(y / x); },          // BinOp::DivBy
+    [](U x, V y) -> T { return static_cast<T>(x == y); },         // BinOp::Eq
+    [](U, V y)   -> T { return static_cast<T>(y); },              // BinOp::Pass
+    [](U x, V y) -> T { return static_cast<T>(std::max(x, y)); }, // BinOp::Max
+    [](U x, V y) -> T { return static_cast<T>(std::min(x, y)); }, // BinOp::Min
 };
 
 template <typename T, typename U>
