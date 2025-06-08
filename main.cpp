@@ -13,48 +13,482 @@ using linalg::Shape;
 using autodiff::Expression;
 using autodiff::ComputationGraph;
 
-int main() {
-    Tensor<float> a({{1, 20, 3}, {4, 5, 6}});
-    //Tensor<float> b({{1, 3, 5}, {7, 9, 11}});
-    Tensor<float> b({5, 1, 50});
-    Tensor<float> c({10, 100});
-    c.assign(c.reshape(Shape{2, 1}));
+void test_creation() {
+    Tensor<float> t1 = Tensor<float>::zeros({2, 3});
+    assert(t1.shape() == std::vector<size_t>({2, 3}));
+    
+    Tensor<float> t2({{1, 2, 3}, {4, 5, 6}});
+    assert(t2.shape() == std::vector<size_t>({2, 3}));
+}
 
-    // (a + c).print();
-    // (a + b).print();
-    // (b + c).print();
+void test_indexing() {
+    Tensor<float> t({{1, 2, 3}, {4, 5, 6}});
+    assert((float)(t[0, 1]) == 2);
+    t[1, 2] = 10;
+    assert((float)(t[1, 2]) == 10);
+}
 
-    //a.max({1}, false).print();
-    // a.softmax(0).print();
-    // a.log_softmax(0).exp().print();
+void test_broadcasting() {
+    Tensor<float> t1({1, 2, 3});
+    Tensor<float> t2({{1, 2, 3}, {4, 5, 6}});
+    Tensor<float> res = t1 + t2;
+    assert(res.shape() == std::vector<size_t>({2, 3}));
+}
 
-    a.argmin(1, false).print();
+void test_elementwise_ops() {
+    Tensor<float> t1({1, 2, 3});
+    Tensor<float> t2({4, 5, 6});
+    assert(((t1 + t2)[1]) == 7.0f);
+    assert(((t1 - t2)[1]) == -3.0f);
+    assert(((t1 * t2)[1]) == 10.0f);
+    assert(((t1 / t2)[1]) == 2.0f / 5);
+}
 
-    a.min({1}).print();
+void test_sum() {
+    Tensor<float> t({{1, 2, 3}, {4, 5, 6}});
+    Tensor<float> s = t.sum({0});
+    assert(s.shape() == std::vector<size_t>({3}));
+    assert((float)s[1] == 7);
+}
 
-    //(b * a).print();
-    //a *= b;
-    //a.print();
-    // b.print();
-    // a /= 4.0f;
+void test_reshape() {
+    Tensor<float> t({{1, 2, 3}, {4, 5, 6}});
+    Tensor<float> r = t.reshape({3, 2});
+    assert(r.shape() == std::vector<size_t>({3, 2}));
+}
+
+void test_matmul() {
+    Tensor<float> a({{1, 2}, {3, 4}});
+    Tensor<float> b({{5, 6}, {7, 8}});
+    Tensor<float> c = matmul(a, b);
+    assert(c.shape() == std::vector<size_t>({2, 2}));
+    assert((float)(c[0, 0]) == 19);
+    assert((float)(c[1, 1]) == 50);
+}
+
+void test_autodiff_add() {
+    ComputationGraph graph;
+
+    Expression<> a({1, 2, 3}, "a", &graph), b({5}, "b", &graph);
+    // a.value.print();
+    // b.value.print();
+
+    // a.grad->print();
+    // b.grad->print();
+
+    // a = a + Tensor<>({1, 2, 3});
+    // a.value.print();
+
+    // Expression<> sum = a + b;
+    // (*sum.grad) += 1;
+
+    // graph.backward();
+
+    // a.grad->print();
+    // b.grad->print();
+    // sum.grad->print();
+    Expression<> sum = (a + b).sum();
+    //sum.value.print();
+
+    sum.backward();
+    assert(a.grad()[0] == 1.0f);
+    assert(b.grad()[0] == 3.0f);
+    //a.grad->print();
+    //b.grad->print();
+}
+
+void test_autodiff_mul() {
+    autodiff::ComputationGraph graph;
+
+    // a: shape [3]
+    // b: shape [1] → broadcasted to match a
+    autodiff::Expression<> a({1, 2, 3}, "a", &graph);
+    autodiff::Expression<> b({5}, "b", &graph);
+
+    // c: elementwise multiplication, shape [3]
+    autodiff::Expression<> c = a * b;
+
+    // loss: sum over c, scalar
+    autodiff::Expression<> loss = c.sum();
+
+    // run backward pass
+    loss.backward();
+
+    // loss.print();
     // a.print();
-    // (a == b).print();
-    // a.print();
     // b.print();
-    // Tensor<float> c = a.exp();
     // c.print();
-    // c.log().print();
 
-    //std::cout << sizeof(backend::CpuSingleThreadBuffer<float>) << " " << sizeof(backend::DeviceBuffer<float>) << std::endl;
+    // Expected gradients:
+    // ∂loss/∂a = b = [5, 5, 5]
+    // ∂loss/∂b = sum(a) = 6 → because b was broadcast
 
-    // Shape shape({2, 3});
-    // Tensor<float> a(shape);
-    // Tensor<float> b(shape);
-    // Tensor<float> c({1, 1});
-    // Tensor<float> d(shape);
+    assert(a.grad()[0] == 5.0f);
+    assert(a.grad()[1] == 5.0f);
+    assert(a.grad()[2] == 5.0f);
 
-    // Tensor<float> e = c + c;
-    // e.print();
+    assert(b.grad()[0] == 6.0f);
+}
+
+void test_autodiff_deep_graph() {
+    autodiff::ComputationGraph graph;
+    autodiff::Expression<> a({1, 2, 3}, &graph);
+    autodiff::Expression<> b({2}, &graph);
+    autodiff::Expression<> c({3}, &graph);
+
+    // Deep graph: d = (a + b) * c
+    autodiff::Expression<> d = (a + b) * c;
+
+    // loss: sum of d
+    autodiff::Expression<> loss = d.sum();
+
+    // run backward pass
+    loss.backward();
+
+    // Forward: d = (a + b) * c
+    // d = ([1, 2, 3] + 2) * 3 = [3, 4, 5] * 3 = [9, 12, 15]
+    // loss = 9 + 12 + 15 = 36
+
+    // Backward:
+    // ∂loss/∂d = [1, 1, 1]
+    // ∂loss/∂c = sum((a + b)) = sum([3, 4, 5]) = 12
+    // ∂loss/∂b = sum(c) = 3 repeated → [3, 3, 3] → reduce = 9
+    // ∂loss/∂a = same as b: [3, 3, 3]
+
+    // std::cout << "loss" << std::endl;
+    // loss.print();
+    // std::cout << "a" << std::endl;
+    // a.print();
+    // std::cout << "b" << std::endl;
+    // b.print();
+    // std::cout << "c" << std::endl;
+    // c.print();
+    // std::cout << "d" << std::endl;
+    // d.print();
+
+    assert(a.grad()[0] == 3.0f);
+    assert(a.grad()[1] == 3.0f);
+    assert(a.grad()[2] == 3.0f);
+
+    assert(b.grad()[0] == 9.0f);
+    assert(c.grad()[0] == 12.0f);
+}
+
+void test_range_indexing() {
+    Tensor<float> t({{0, 1, 2}, {3, 4, 5}, {6, 7, 8}});
+    using linalg::Range;
+
+    // Row slice: rows 1 and 2
+    auto t1 = t[Range(1, 2)];
+    assert(t1.shape() == std::vector<size_t>({2, 3}));
+    assert((float)(t1[0, 0]) == 3);
+    assert((float)(t1[1, 2]) == 8);
+
+    // Column slice: columns 0 and 1 of all rows
+    auto t2 = t[Range(), Range(0, 2)];
+    assert(t2.shape() == std::vector<size_t>({3, 2}));
+    assert((float)(t2[0, 0]) == 0);
+    assert((float)(t2[2, 1]) == 7);
+
+    // Full slice using -1 length (to end)
+    auto t3 = t[Range(1, -1), Range(1, -1)];
+    assert(t3.shape() == std::vector<size_t>({2, 2}));
+    assert((float)(t3[0, 0]) == 4);
+    assert((float)(t3[1, 1]) == 8);
+}
+
+void run_tests() {
+    test_creation();
+    test_indexing();
+    test_broadcasting();
+    test_elementwise_ops();
+    test_sum();
+    test_reshape();
+    test_matmul();
+    test_autodiff_add();
+    test_autodiff_mul();
+    test_autodiff_deep_graph();
+    test_range_indexing();
+    
+    std::cout << "All tests passed!" << std::endl;
+}
+
+void linreg() {
+    Tensor<> x = {0, 1, 2, 3, 4};
+    x.assign(x.reshape({5, 1}));
+
+    Tensor<> y = {3, 5, 7, 9, 11};
+    y.assign(y.reshape({5, 1}));
+
+    module::LinearReLU<> linear(1, 1);
+    solver::GradientDescent gd(linear.weights(), 0.1);
+
+    for (int epoch = 0; epoch < 100; epoch++) {
+        auto yPred = linear(x);
+        auto loss = loss::mse(yPred, y);
+        loss.backward();
+        gd.step();
+        gd.zero_grad();
+        loss.value().print();
+        yPred.value().print();
+    }
+    
+    for (auto &w : linear.weights()) {
+        w.print();
+    }
+}
+
+void quadreg() {
+    Tensor<> x = Tensor<>::zeros({100, 1});
+    Tensor<> y = Tensor<>::zeros({100, 1});
+    for (int i = 0; i < 100; ++i) {
+        float v = -1.0f + 2.0f * i / 99;
+        x[i][0] = v;
+        y[i][0] = v * v;
+    }
+
+    // x[Range(5)].print();
+    // y[Range(5)].print();
+
+    module::MLP<> model({1, 8, 1});
+    solver::GradientDescent gd(model.weights(), 0.01);
+
+    for (int epoch = 0; epoch < 1000; epoch++) {
+        auto yPred = model(x);
+        auto loss = loss::mse(yPred, y);
+        loss.backward();
+        gd.step();
+        gd.zero_grad();
+        if (epoch % 100 == 0)
+            loss.value().print();
+        //yPred.value.print();
+    }
+    loss::mse(model(x), y).print();
+
+    std::cout << "y pred" << std::endl;
+    (model(x).value() - y).print();
+    //std::cout << "y" << std::endl;
+    //y.print();
+    
+    for (auto &w : model.weights()) {
+        w.value().print();
+    }
+}
+
+void mnist_mlp() {
+    dataloader::MNISTDataset train;
+    assert(train.load_images("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte"));
+    assert(train.load_labels("../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte"));
+    
+    // for (int i = 0; i < 10; i++) {
+    //     auto [img, label] = train.get(i);
+    //     img.assign(img.reshape({28, 28}));
+    //     std::cout << "Label: " << ((int)label) << std::endl;
+    //     for (int i = 0; i < 28; i++) {
+    //         for (int j = 0; j < 28; j++) {
+    //             std::cout << (img[i][j] < 0.5 ? '.' : '@');
+    //         }
+    //         std::cout << std::endl;
+    //     }
+    // }
+
+    std::vector<Tensor<float>> y;
+    for (uint8_t label : train.labels) {
+        y.emplace_back(Tensor<float>::zeros({10}));
+        y.back()[label] = 1.0f;
+    }
+
+    dataloader::DataLoader<float> dl(train.images, y, 64);
+
+    dataloader::MNISTDataset test;
+    assert(test.load_images("../datasets/mnist/t10k-images-idx3-ubyte/t10k-images-idx3-ubyte"));
+    assert(test.load_labels("../datasets/mnist/t10k-labels-idx1-ubyte/t10k-labels-idx1-ubyte"));
+
+    Tensor<float> xTest(Shape({test.images.size(), 784}));
+    Tensor<size_t> yTest(Shape({test.images.size()}));
+
+    for (size_t i = 0; i < test.images.size(); i++) {
+        xTest[i] = test.images[i];
+        yTest[i] = test.labels[i];
+    }
+
+    module::MLP<float> model({784, 128, 64, 10});
+    auto weights = model.weights();
+
+    solver::GradientDescent gd(weights, 0.1);
+
+    std::cout << "Ready" << std::endl;
+
+    // auto it = dl.begin();
+    // auto [xBatch, yBatch] = *it;
+
+    // auto logits = model(xBatch);
+    // auto loss = loss::cross_entropy_logits(logits, yBatch);
+
+    // loss.backward();
+
+    Tensor<size_t> yPred = model(xTest).value().argmax();
+    int correct = (yPred == yTest).astype<int>().sum();
+    std::cout << "Test accuracy: " << correct << " / " << test.images.size() << " = " << ((float)correct / test.images.size()) << std::endl;
+
+    for (int epoch = 0; epoch < 10; epoch++) {
+        float totalLoss = 0.0f;
+        int cnt = 0;
+        for (auto&& [x, y] : dl) {
+            auto logits = model(x);
+            auto loss = loss::cross_entropy_logits(logits, y);
+            totalLoss += loss.value();
+            cnt++;
+            loss.backward();
+            gd.step();
+            gd.zero_grad();
+            //yPred.value.print();
+            dl.shuffle();
+        }
+        std::cout << "Average epoch training loss: " << totalLoss / cnt << std::endl;
+
+        Tensor<size_t> yPred = model(xTest).value().argmax();
+        int correct = (yPred == yTest).astype<int>().sum();
+        std::cout << "Test accuracy: " << correct << " / " << test.images.size() << " = " << ((float)correct / test.images.size()) << std::endl;
+    }
+
+    // for (auto &w : weights) {
+    //     w[Range(5)].print();
+    // }
+}
+
+void print_img(const Tensor<float>& img) {
+    for (int i = 0; i < 28; i++) {
+        for (int j = 0; j < 28; j++) {
+            std::cout << (img[i * 28 + j] < 0.5f ? '.' : '@') << ' ';
+        }
+        std::cout << std::endl;
+    }
+}
+
+int main() {
+    //run_tests();
+
+    //quadreg();
+
+    // dataloader::MNISTDataset train;
+    // assert(train.load_images("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte"));
+    // assert(train.load_labels("../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte"));
+
+    // std::vector<Tensor<float>> y;
+    // for (uint8_t label : train.labels) {
+    //     y.emplace_back(Tensor<float>::zeros({10}));
+    //     y.back()[label] = 1.0f;
+    // }
+
+    // dataloader::DataLoader<float> dl(train.images, y, 64);
+
+    // auto it = dl.begin();
+    // auto [xBatch, yBatch] = *it;
+    // print_img(xBatch[5]);
+    // yBatch[5].print();
+
+    //Expression<> expr({{1, 1, 1}, {2, 2, 2}});
+    //expr = expr.log_softmax();
+    //expr.print();
+
+    // Tensor<> t({{1, 1, 5}, {0.1, 2, 2}});
+    // t.softmax().log().print();
+    // t.log_softmax().print();
+
+    mnist_mlp();
+
+    // Tensor<> t = Tensor<>::normal({2, 3, 3});
+    // t.print();
+    // t.argmax().print();
+
+    // Tensor<> a({{1, 2, 3}, {4, 5, 6}});
+    // Tensor<> b({{1, 2, 3}, {4, 5, 6}});
+
+    // std::vector<Tensor<>> v = {a, b};
+
+    // Tensor<bool> res = a == b;
+    // res.sum({1}).print();
+    // res.astype<int>().sum({1}).print();
+
+    // backend::CpuSingleThreadBuffer<float>* test = new backend::CpuSingleThreadBuffer<float>(10);//backend::CpuSingleThreadBuffer<float>::create(10);
+
+    // test->at(0) = 5;
+    // std::cout << test->at(0) << std::endl;
+
+    // (*test)[1] = 3;
+    // std::cout << (*test)[1] << std::endl;
+
+    // for (int i = 0; i < 30; i++) {
+    //     (*test)[i] = i;
+    //     std:: cout << (*test)[i] << std::endl;
+    // }
 
     return 0;
 }
+
+// class TwoLayerNet : public Model {
+//     TwoLayerNet(Tensor)
+// };
+
+/*
+TODO
+- modules build the computation graph and hold weights/submodules between passes
+- implement sum across abritrary axes
+- expression class that holds n expression pointers
+ - base case is expression that holds a tensor (Parameter)
+ - forward pass sets up expression objects, computes final loss fn
+ - backprop on loss function traverses the tree generated by expression classes and propagates
+ - each expression must cache output as well as gradient of loss wrt output
+ - 2 solutions for backprop order
+  - compute how many "parent" expressions there are during graph construction. during DFS from loss expression, decrement count whenever expression is reached.
+    then, only call backward() when count reaches zero
+  - during graph construction, maintain linked list in topo sort order that splices lists from child expressions. then, during backprop iterate through list
+ - use concept for expressions
+  - value() -> Tensor& (computed and cached on construction)
+  - gradient() -> Tensor* (nullptr if doesn't require gradient)
+  - backward() (uses cached gradient here and propagates to childrens' gradient caches)
+  - other fields
+   - value cache (computed and initialized on construction)
+   - gradient cache (if gradient is required, initialized to zero)
+   - number of parents? or linked list of this expression and child expressions in topo order
+ - actually lwk could make this template using this trick for forwards and backwards with pack arguments:
+    constexpr auto lambda = [](int a) { return a * 2; }; 
+    using U = T<lambda>;
+    or T<decltype([](int a) { return a * 2; }){}> obj;
+
+    template<auto forward, auto backward, typename Args...>
+    class Expression {};
+
+    template<typename U, typename V>
+    AddExpr = Expression<[](Tensor& a, Tensor& b) { return a + b; }, [](Tensor& grad, Tensor* a, Tensor* b) { *a += grad, *b += grad; }, U, V>;
+ - store list of learnable Parameters, zero out and use in expressions each time loss is computed. then optimizer does things with Parameter's value and gradient
+ - how do we deal with rvalue lvalue? use universal reference T&& and forward() into some processing overload for rvalue and lvalue
+  - rvalue should be moved into reference, lvalue should be saved
+  - nvm doesnt work, rvalues cannot be moved into reference fields
+ - make wrapper class Expression that contains Node pointer
+  - allows stuff like x = x + y and means we don't have pointers to stack variables
+- consider doing template <auto op> for passing functions. does not allow capture however
+- simd: during axes recursion stop when subtensors are full (stored contiguously) and do simd operations
+ - scalar operations should have built in operations to broadcast. research further
+ - when broadcasting, do profiling for relative size between tensors. can try striding and adding or adding smaller tensor many times
+ - think about when both tensors are being duplicated
+ - could also stop earlier when theres a fixed stride (iff tail axes are fixed?)
+ - use neon
+- try to join consecutive operations? a + (b * 2) gets evaluated once
+- random init
+- implement tail recursion elimination
+- research how to optimize/parallelize these elementwise operations
+- .sum()
+- figure out scalar operations
+- matmul
+- reshape
+ - might need to do copy operations when slices occur
+ - in place or return?
+- numpy also does copies when doing arbitrary slices, seems to also keep views with Range objects
+- figure out elementwise assignment (make TensorSlice class with elementwise assignment and Tensor conversion operator for implicit casting?)
+- idea: make the TensorSlice class just modify indexing in place? (doesn't really work)
+- other idea: have elementwise operation just keep track of running index offsets so it doesn't need to make new Tensor slices
+ - probably more correct
+- main problem is that we're copying axisIndices/shape which mostly aren't changing and shared ptr data overhead?
+*/

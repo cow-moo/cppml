@@ -9,7 +9,87 @@ namespace linalg {
 
 // TODO: reimplement with SBO
 
-using Strides = std::vector<size_t>;
+struct Strides {
+    std::vector<size_t> dims;
+
+    Strides() = default;
+    Strides(std::vector<size_t> d) : dims(std::move(d)) {}
+    Strides(std::initializer_list<size_t> init) : dims(init) {}
+
+    operator std::vector<size_t>&() { return dims; }
+    operator const std::vector<size_t>&() const { return dims; }
+
+    // Forward vector methods
+    auto front() const { return dims.front(); }
+    auto back() const { return dims.back(); }
+
+    auto begin() { return dims.begin(); }
+    auto end() { return dims.end(); }
+    auto begin() const { return dims.begin(); }
+    auto end() const { return dims.end(); }
+
+    void push_back(size_t val) {
+        dims.push_back(val);
+    }
+
+    void pop_back() { dims.pop_back(); }
+
+    auto insert(typename std::vector<size_t>::iterator pos, size_t val) {
+        return dims.insert(pos, val);
+    }
+
+    auto erase(typename std::vector<size_t>::iterator pos) {
+        return dims.erase(pos);
+    }
+
+    auto erase(typename std::vector<size_t>::iterator first, typename std::vector<size_t>::iterator last) {
+        return dims.erase(first, last);
+    }
+
+    bool operator==(const Strides& other) const {
+        return dims == other.dims;
+    }
+
+    bool operator!=(const Strides& other) const {
+        return !(*this == other);
+    }
+
+    auto data() const {
+        return dims.data();
+    }
+
+    size_t& operator[](size_t i) { return dims[i]; }
+    const size_t& operator[](size_t i) const { return dims[i]; }
+
+    size_t& operator[](int i) {
+        if (i < 0) i += dims.size();
+        if (i < 0 || i >= (int)dims.size()) {
+            throw std::invalid_argument("Axis index out of bounds.");
+        }
+        return dims[i];
+    }
+
+    const size_t& operator[](int i) const {
+        if (i < 0) i += dims.size();
+        if (i < 0 || i >= (int)dims.size()) {
+            throw std::invalid_argument("Axis index out of bounds.");
+        }
+        return dims[i];
+    }
+
+    size_t size() const { return dims.size(); }
+
+    friend std::ostream& operator<<(std::ostream& os, const Strides& t) {
+        os << "(";
+        for (size_t i = 0; i < t.size(); i++) {
+            os << t[i];
+            if (i < t.size() - 1)
+                os << ", ";
+        }
+        os << ")";
+        return os;
+    }
+};
 
 struct Shape {
     std::vector<size_t> dims;

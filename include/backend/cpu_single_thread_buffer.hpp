@@ -21,6 +21,10 @@ static constexpr BinOpFn<T, U, V> binop_table[] = {
     [](U x, V y) -> T { return static_cast<T>(x / y); },          // BinOp::Div
     [](U x, V y) -> T { return static_cast<T>(y / x); },          // BinOp::DivBy
     [](U x, V y) -> T { return static_cast<T>(x == y); },         // BinOp::Eq
+    [](U x, V y) -> T { return static_cast<T>(x < y); },          // BinOp::Lt
+    [](U x, V y) -> T { return static_cast<T>(x <= y); },         // BinOp::Lte
+    [](U x, V y) -> T { return static_cast<T>(x > y); },          // BinOp::Gt
+    [](U x, V y) -> T { return static_cast<T>(x >= y); },         // BinOp::Gte
     [](U, V y)   -> T { return static_cast<T>(y); },              // BinOp::Pass
     [](U x, V y) -> T { return static_cast<T>(std::max(x, y)); }, // BinOp::Max
     [](U x, V y) -> T { return static_cast<T>(std::min(x, y)); }, // BinOp::Min
@@ -31,8 +35,10 @@ using UnOpFn = T(*)(U);
 
 template <typename T, typename U>
 static constexpr UnOpFn<T, U> unop_table[] = {
-    [](U x) { return std::exp(x); },
-    [](U x) { return std::log(x); },
+    [](U x) { return static_cast<T>(std::exp(x)); },
+    [](U x) { return static_cast<T>(std::log(x)); },
+    [](U x) { return static_cast<T>(-x); },
+    [](U x) { return static_cast<T>(x); },
 };
 
 template <typename U>
@@ -42,6 +48,62 @@ template <typename U>
 static constexpr ArgRedOpFn<U> argredop_table[] = {
     [](std::pair<U, size_t>& x, std::pair<U, size_t> y) { x = std::max(x, y); },
     [](std::pair<U, size_t>& x, std::pair<U, size_t> y) { x = std::min(x, y); },
+};
+
+template <typename U>
+struct StridedIterator {
+    U* data;
+    Shape shape;
+    Strides strides;
+    std::array<size_t, MAX_SBO_DIMS> idxs;
+    size_t flatIdx;
+
+    StridedIterator(U* data, const Shape& shape, const Strides& strides, size_t offset) 
+        : data(data), shape(shape), strides(strides), idxs{}, flatIdx(offset) {}
+
+    U& operator*() {
+        return data[flatIdx];
+    }
+
+    StridedIterator& operator++() {
+        for (int i = shape.size() - 1; i >= 0; i--) {
+            flatIdx += strides[i];
+            if (++idxs[i] == shape[i]) {
+                idxs[i] = 0;
+                flatIdx -= strides[i] * shape[i];
+            }
+            else break;
+        }
+        return *this;
+    }
+
+    StridedIterator& operator+=(size_t n) {
+        idxs[shape.size() - 1] += n;
+        flatIdx += n * strides[shape.size() - 1];
+
+        for (int i = shape.size() - 1; i >= 1; i--) {
+            if (idxs[i] >= shape[i]) {
+                size_t num = idxs[i] / shape[i];
+                idxs[i] -= num * shape[i];
+                flatIdx -= num * shape[i] * strides[i];
+                idxs[i - 1] += num;
+                flatIdx += num * strides[i - 1];
+            }
+            else break;
+        }
+
+        return *this;
+    }
+    
+    StridedIterator operator+(size_t n) {
+        StridedIterator res(*this);
+        res += n;
+        return res;
+    }
+
+    bool operator==(const StridedIterator& other) const {
+        return other.data == data && other.flatIdx == flatIdx;
+    }
 };
 
 template <typename T>
@@ -92,11 +154,12 @@ public:
                       BinOp op) {
         assert(a->backend_type() == BackendType::CpuSingleThread && 
                b->backend_type() == BackendType::CpuSingleThread);
+
+        auto rIt = StridedIterator<T>(data_, shape, rStrides, rOffset);
         auto aIt = StridedIterator<U>(static_cast<CpuSingleThreadBuffer<U>*>(a)->data_, 
                                       shape, aStrides, aOffset);
         auto bIt = StridedIterator<V>(static_cast<CpuSingleThreadBuffer<U>*>(b)->data_, 
                                       shape, bStrides, bOffset);
-        auto rIt = StridedIterator<T>(data_, shape, rStrides, rOffset);
         
         auto fn = binop_table<T, U, V>[static_cast<size_t>(op)];
         
@@ -111,9 +174,10 @@ public:
                       DeviceBuffer<U>* a, const Strides& aStrides, size_t aOffset,
                       V b, BinOp op) {
         assert(a->backend_type() == BackendType::CpuSingleThread);
+
+        auto rIt = StridedIterator<T>(data_, shape, rStrides, rOffset);
         auto aIt = StridedIterator<U>(static_cast<CpuSingleThreadBuffer<U>*>(a)->data_, 
                                       shape, aStrides, aOffset);
-        auto rIt = StridedIterator<T>(data_, shape, rStrides, rOffset);
         
         auto fn = binop_table<T, U, V>[static_cast<size_t>(op)];
 
@@ -167,6 +231,47 @@ public:
         }
     }
 
+    void matmul(const Shape& rShape, const Strides& rStrides, size_t rOffset,
+                const DeviceBuffer<T>* a, const Strides& aStrides, size_t aOffset,
+                const DeviceBuffer<T>* b, const Strides& bStrides, size_t bOffset,
+                size_t innerDim) override {
+        assert(a->backend_type() == BackendType::CpuSingleThread &&
+               b->backend_type() == BackendType::CpuSingleThread);
+
+        T* aData = static_cast<const CpuSingleThreadBuffer*>(a)->data_;
+        T* bData = static_cast<const CpuSingleThreadBuffer*>(b)->data_;
+
+        Shape outerShape(rShape);
+        outerShape.pop_back(); outerShape.pop_back();
+        Strides rOuterStrides(rStrides);
+        rOuterStrides.pop_back(); rOuterStrides.pop_back();
+        Strides aOuterStrides(aStrides);
+        aOuterStrides.pop_back(); aOuterStrides.pop_back();
+        Strides bOuterStrides(bStrides);
+        bOuterStrides.pop_back(); bOuterStrides.pop_back();
+
+        auto rIt = StridedIterator<T>(data_, outerShape, rOuterStrides, rOffset);
+        auto aIt = StridedIterator<T>(aData, outerShape, aOuterStrides, aOffset);
+        auto bIt = StridedIterator<T>(bData, outerShape, bOuterStrides, bOffset);
+        
+        size_t rDim0 = rShape[-2], rDim1 = rShape[-1];
+        size_t rStride0 = rStrides[-2], rStride1 = rStrides[-1];
+        size_t aStride0 = aStrides[-2], aStride1 = aStrides[-1];
+        size_t bStride0 = bStrides[-2], bStride1 = bStrides[-1];
+        for (size_t outer = 0; outer < outerShape.numel(); outer++) {
+            for (size_t i = 0; i < rDim0; i++) {
+                for (size_t j = 0; j < rDim1; j++) {
+                    size_t index = rOffset + rStride0 * i + rStride1 * j;
+                    data_[index] = 0;
+                    for (size_t k = 0; k < innerDim; k++) {
+                        data_[index] += aData[aOffset + aStride0 * i + aStride1 * k] *
+                                        bData[bOffset + bStride0 * k + bStride1 * j];
+                    }
+                }
+            }
+        }
+    }
+
     CpuSingleThreadBuffer& operator*() { return *this; }
 
     T& operator[](size_t i) {
@@ -181,62 +286,6 @@ private:
     friend class CpuSingleThreadBuffer;
 
     CpuSingleThreadBuffer(size_t size) : DeviceBuffer<T>(BackendType::CpuSingleThread), size_(size) {}
-
-    template <typename U>
-    struct StridedIterator {
-        U* data;
-        Shape shape;
-        Strides strides;
-        std::array<size_t, MAX_SBO_DIMS> idxs;
-        size_t flatIdx;
-
-        StridedIterator(U* data, const Shape& shape, const Strides& strides, size_t offset) 
-            : data(data), shape(shape), strides(strides), idxs{}, flatIdx(offset) {}
-
-        U& operator*() {
-            return data[flatIdx];
-        }
-
-        StridedIterator& operator++() {
-            for (int i = shape.size() - 1; i >= 0; i--) {
-                flatIdx += strides[i];
-                if (++idxs[i] == shape[i]) {
-                    idxs[i] = 0;
-                    flatIdx -= strides[i] * shape[i];
-                }
-                else break;
-            }
-            return *this;
-        }
-
-        StridedIterator& operator+=(size_t n) {
-            idxs[shape.size() - 1] += n;
-            flatIdx += n * strides[shape.size() - 1];
-
-            for (int i = shape.size() - 1; i >= 1; i--) {
-                if (idxs[i] >= shape[i]) {
-                    size_t num = idxs[i] / shape[i];
-                    idxs[i] -= num * shape[i];
-                    flatIdx -= num * shape[i] * strides[i];
-                    idxs[i - 1] += num;
-                    flatIdx += num * strides[i - 1];
-                }
-                else break;
-            }
-
-            return *this;
-        }
-        
-        StridedIterator operator+(size_t n) {
-            StridedIterator res(*this);
-            res += n;
-            return res;
-        }
-
-        bool operator==(const StridedIterator& other) const {
-            return other.data == data && other.flatIdx == flatIdx;
-        }
-    };
 };
 
 }

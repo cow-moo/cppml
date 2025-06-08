@@ -216,11 +216,11 @@ public:
     }
 
     Expression relu() const {
-        Expression res(value().apply_unary([](T val) { return val > 0 ? val : 0; }), "relu", graph_);
+        Expression res(value().relu(), "relu", graph_);
 
         if (res.graph_) {
             res.graph_->tape.push_back([resGrad = *res.grad_, grad = *grad_, value = this->value()]() mutable {
-                grad += value.apply_unary([](T val) { return val > 0 ? 1 : 0; }) * resGrad;
+                grad += (value > 0.0f).template astype<T>() * resGrad;
             });
         }
 

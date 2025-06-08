@@ -21,6 +21,10 @@ enum class BinOp {
     Div,   // a / b
     DivBy, // b / a (for scalar / tensor)
     Eq,    // a == b
+    Lt,    // a < b
+    Lte,   // a <= b
+    Gt,    // a > b (for tensor > scalar)
+    Gte,   // a >= b ( for tensor >= scalar)
     Pass,  // b (for assignment)
     Max,   // max(a, b)
     Min,   // min(a, b)
@@ -29,6 +33,8 @@ enum class BinOp {
 enum class UnOp {
     Exp,
     Log,
+    Neg,  // -x
+    Pass, // for astype
 };
 
 enum class ArgRedOp {
@@ -89,6 +95,11 @@ public:
         static_assert(std::is_same_v<T, size_t>, "arg_reduce only works with T = size_t");
         BACKEND_DISPATCH(arg_reduce(rShape, rStrides, rOffset, other, otherShape, otherStrides, otherOffset, op));
     }
+
+    virtual void matmul(const Shape& rShape, const Strides& rStrides, size_t rOffset,
+                const DeviceBuffer<T>* a, const Strides& aStrides, size_t aOffset,
+                const DeviceBuffer<T>* b, const Strides& bStrides, size_t bOffset,
+                size_t innerDim) = 0;
 
 protected:
     DeviceBuffer(BackendType type) : refs_(1), type_(type) {}
