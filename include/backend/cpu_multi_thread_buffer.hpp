@@ -1,24 +1,21 @@
-#ifndef BACKEND_CPU_SINGLE_THREAD_BUFFER_H
-#define BACKEND_CPU_SINGLE_THREAD_BUFFER_H
+#ifndef BACKEND_CPU_MULTI_THREAD_BUFFER_H
+#define BACKEND_CPU_MULTI_THREAD_BUFFER_H
 
 #include "backend/base.hpp"
 #include "backend/cpu_utils.hpp"
 
 namespace backend {
 
-using linalg::Shape;
-using linalg::Strides;
-
 template <typename T>
-class CpuSingleThreadBuffer final : public DeviceBuffer<T> {
+class CpuMultiThreadBuffer final : public DeviceBuffer<T> {
 public:
-    static CpuSingleThreadBuffer* create(size_t size) {
-        size_t total = sizeof(CpuSingleThreadBuffer) + alignof(T) + sizeof(T) * size;
+    static CpuMultiThreadBuffer* create(size_t size) {
+        size_t total = sizeof(CpuMultiThreadBuffer) + alignof(T) + sizeof(T) * size;
         void* mem = ::operator new(total);
-        auto* buffer = new (mem) CpuSingleThreadBuffer(size);
+        auto* buffer = new (mem) CpuMultiThreadBuffer(size);
 
-        void* raw = reinterpret_cast<char*>(buffer) + sizeof(CpuSingleThreadBuffer);
-        size_t space = total - sizeof(CpuSingleThreadBuffer);
+        void* raw = reinterpret_cast<char*>(buffer) + sizeof(CpuMultiThreadBuffer);
+        size_t space = total - sizeof(CpuMultiThreadBuffer);
         void* aligned = std::align(alignof(T), sizeof(T) * size, raw, space);
         buffer->data_ = reinterpret_cast<T*>(aligned);
         assert(reinterpret_cast<uintptr_t>(buffer->data_) % alignof(T) == 0);
@@ -33,7 +30,7 @@ public:
         ::operator delete(p);
     }
 
-    ~CpuSingleThreadBuffer() override = default;
+    ~CpuMultiThreadBuffer() override = default;
 
     void write_flat(const std::vector<T>& values) override {
         assert(values.size() == size_);
@@ -41,12 +38,12 @@ public:
     }
 
     T& at(size_t i) override {
-        if (i >= size_) throw std::out_of_range("CpuSingleThreadBuffer::at");
+        if (i >= size_) throw std::out_of_range("CpuMultiThreadBuffer::at");
         return data_[i];
     }
 
     const T& at(size_t i) const override {
-        if (i >= size_) throw std::out_of_range("CpuSingleThreadBuffer::at");
+        if (i >= size_) throw std::out_of_range("CpuMultiThreadBuffer::at");
         return data_[i];
     }
 
@@ -55,13 +52,13 @@ public:
                       DeviceBuffer<U>* a, const Strides& aStrides, size_t aOffset,
                       DeviceBuffer<V>* b, const Strides& bStrides, size_t bOffset,
                       BinOp op) {
-        assert(a->backend_type() == BackendType::CpuSingleThread && 
-               b->backend_type() == BackendType::CpuSingleThread);
+        assert(a->backend_type() == BackendType::CpuMultiThread && 
+               b->backend_type() == BackendType::CpuMultiThread);
 
         auto rIt = cpu_utils::StridedIterator<T>(data_, shape, rStrides, rOffset);
-        auto aIt = cpu_utils::StridedIterator<U>(static_cast<CpuSingleThreadBuffer<U>*>(a)->data_, 
+        auto aIt = cpu_utils::StridedIterator<U>(static_cast<CpuMultiThreadBuffer<U>*>(a)->data_, 
                                       shape, aStrides, aOffset);
-        auto bIt = cpu_utils::StridedIterator<V>(static_cast<CpuSingleThreadBuffer<U>*>(b)->data_, 
+        auto bIt = cpu_utils::StridedIterator<V>(static_cast<CpuMultiThreadBuffer<U>*>(b)->data_, 
                                       shape, bStrides, bOffset);
         
         auto fn = cpu_utils::binop_table<T, U, V>[static_cast<size_t>(op)];
@@ -76,10 +73,10 @@ public:
     void apply_binary(const Shape& shape, const Strides& rStrides, size_t rOffset,
                       DeviceBuffer<U>* a, const Strides& aStrides, size_t aOffset,
                       V b, BinOp op) {
-        assert(a->backend_type() == BackendType::CpuSingleThread);
+        assert(a->backend_type() == BackendType::CpuMultiThread);
 
         auto rIt = cpu_utils::StridedIterator<T>(data_, shape, rStrides, rOffset);
-        auto aIt = cpu_utils::StridedIterator<U>(static_cast<CpuSingleThreadBuffer<U>*>(a)->data_, 
+        auto aIt = cpu_utils::StridedIterator<U>(static_cast<CpuMultiThreadBuffer<U>*>(a)->data_, 
                                       shape, aStrides, aOffset);
         
         auto fn = cpu_utils::binop_table<T, U, V>[static_cast<size_t>(op)];
@@ -94,8 +91,8 @@ public:
     void apply_unary(const Shape& shape, const Strides& rStrides, size_t rOffset,
                      DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset,
                      UnOp op) {
-        assert(other->backend_type() == BackendType::CpuSingleThread);
-        auto otherIt = cpu_utils::StridedIterator<U>(static_cast<CpuSingleThreadBuffer<U>*>(other)->data_, 
+        assert(other->backend_type() == BackendType::CpuMultiThread);
+        auto otherIt = cpu_utils::StridedIterator<U>(static_cast<CpuMultiThreadBuffer<U>*>(other)->data_, 
                                           shape, otherStrides, otherOffset);
         auto rIt = cpu_utils::StridedIterator<T>(data_, shape, rStrides, rOffset);
         
@@ -114,8 +111,8 @@ public:
                     const Shape& otherShape, const Strides& otherStrides, size_t otherOffset,
                     ArgRedOp op) {
         static_assert(std::is_same_v<T, size_t>, "arg_reduce only works with T = size_t");
-        assert(other->backend_type() == BackendType::CpuSingleThread);
-        auto otherIt = cpu_utils::StridedIterator<U>(static_cast<const CpuSingleThreadBuffer<U>*>(other)->data_, 
+        assert(other->backend_type() == BackendType::CpuMultiThread);
+        auto otherIt = cpu_utils::StridedIterator<U>(static_cast<const CpuMultiThreadBuffer<U>*>(other)->data_, 
                                           otherShape, otherStrides, otherOffset);
         auto rIt = cpu_utils::StridedIterator<T>(data_, rShape, rStrides, rOffset);
 
@@ -138,11 +135,11 @@ public:
                 const DeviceBuffer<T>* a, const Strides& aStrides, size_t aOffset,
                 const DeviceBuffer<T>* b, const Strides& bStrides, size_t bOffset,
                 size_t innerDim) override {
-        assert(a->backend_type() == BackendType::CpuSingleThread &&
-               b->backend_type() == BackendType::CpuSingleThread);
+        assert(a->backend_type() == BackendType::CpuMultiThread &&
+               b->backend_type() == BackendType::CpuMultiThread);
 
-        T* aData = static_cast<const CpuSingleThreadBuffer*>(a)->data_;
-        T* bData = static_cast<const CpuSingleThreadBuffer*>(b)->data_;
+        T* aData = static_cast<const CpuMultiThreadBuffer*>(a)->data_;
+        T* bData = static_cast<const CpuMultiThreadBuffer*>(b)->data_;
 
         Shape outerShape(rShape);
         outerShape.pop_back(); outerShape.pop_back();
@@ -175,7 +172,7 @@ public:
         }
     }
 
-    CpuSingleThreadBuffer& operator*() { return *this; }
+    CpuMultiThreadBuffer& operator*() { return *this; }
 
     T& operator[](size_t i) {
         return data_[i];
@@ -186,11 +183,11 @@ private:
     T* data_;
 
     template <typename>
-    friend class CpuSingleThreadBuffer;
+    friend class CpuMultiThreadBuffer;
 
-    CpuSingleThreadBuffer(size_t size) : DeviceBuffer<T>(BackendType::CpuSingleThread), size_(size) {}
+    CpuMultiThreadBuffer(size_t size) : DeviceBuffer<T>(BackendType::CpuMultiThread), size_(size) {}
 };
 
 }
 
-#endif // BACKEND_CPU_SINGLE_THREAD_BUFFER_H
+#endif // BACKEND_CPU_MULTI_THREAD_BUFFER_H

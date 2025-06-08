@@ -10,7 +10,7 @@ using linalg::Strides;
 
 enum class BackendType {
     CpuSingleThread,
-    //CpuMultiThread,
+    CpuMultiThread,
 };
 
 enum class BinOp {
@@ -44,11 +44,15 @@ enum class ArgRedOp {
 
 template <typename T> class SharedBuffer;
 template <typename T> class CpuSingleThreadBuffer;
+template <typename T> class CpuMultiThreadBuffer;
 
 #define BACKEND_DISPATCH(...) \
     switch (type_) { \
         case BackendType::CpuSingleThread: \
             static_cast<CpuSingleThreadBuffer<T>*>(this)->template __VA_ARGS__; \
+            break; \
+        case BackendType::CpuMultiThread: \
+            static_cast<CpuMultiThreadBuffer<T>*>(this)->template __VA_ARGS__; \
             break; \
     }
 

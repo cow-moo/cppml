@@ -3,6 +3,7 @@
 
 #include "backend/base.hpp"
 #include "backend/cpu_single_thread_buffer.hpp"
+#include "backend/cpu_multi_thread_buffer.hpp"
 
 namespace backend {
 
@@ -15,6 +16,9 @@ public:
         switch (type) {
             case BackendType::CpuSingleThread:
                 buffer_ = CpuSingleThreadBuffer<T>::create(size);
+                break;
+            case BackendType::CpuMultiThread:
+                buffer_ = CpuMultiThreadBuffer<T>::create(size);
                 break;
         }
     }

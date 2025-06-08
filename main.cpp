@@ -367,6 +367,13 @@ void print_img(const Tensor<float>& img) {
 }
 
 int main() {
+    Tensor<float> a({{1, 2, 3}, {4, 5, 6}}, backend::BackendType::CpuMultiThread);
+    Tensor<float> b({{7, 8, 9}, {10, 11, 12}}, backend::BackendType::CpuSingleThread);
+    a.print();
+    b.print();
+
+    (a + b).print();
+
     //run_tests();
 
     //quadreg();
