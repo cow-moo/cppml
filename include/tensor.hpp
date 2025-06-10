@@ -57,7 +57,7 @@ public:
 
     Tensor(const Tensor& other)
         : data_(other.data_), shape_(other.shape_), strides_(other.strides_), offset_(other.offset_) {}
-
+        
     // Elementwise assignment
     Tensor& operator=(U other) {
         return apply_binary_inplace(other, backend::BinOp::Pass);
@@ -527,6 +527,7 @@ public:
 
     void print() const {
         std::cout << shape_;
+        std::cout << ", " << data_->backend_type();
         std::cout << ": " << (*this) << std::endl;
     }
 
@@ -570,6 +571,9 @@ public:
             }
             shape.insert(shape.begin(), slices.size());
         }
+
+        NestedInitializer(const std::vector<U>& flat) 
+            : flatData(flat), shape({flat.size()}) {}
     };
 
 private:

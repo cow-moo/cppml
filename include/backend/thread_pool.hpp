@@ -22,9 +22,10 @@ private:
     std::queue<std::function<void()>> tasks_;
 
     std::mutex mutex_;
-    std::condition_variable cv_;
-    std::atomic<bool> stop_;
-    std::atomic<size_t> tasksInProgress_;
+    std::condition_variable cvTask_;
+    std::condition_variable cvDone_;
+    bool stop_;
+    size_t tasksInProgress_;
 };
 
 #endif // THREAD_POOL_H

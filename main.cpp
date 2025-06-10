@@ -255,7 +255,6 @@ void quadreg() {
     solver::GradientDescent gd(model.weights(), 0.01);
 
     for (int epoch = 0; epoch < 1000; epoch++) {
-        std::cout << epoch << std::endl;
         auto yPred = model(x);
         auto loss = loss::mse(yPred, y);
         loss.backward();
@@ -278,19 +277,17 @@ void quadreg() {
 }
 
 void mnist_mlp() {
-    std::cout << "hi" << std::endl;
     dataloader::MNISTDataset train;
     assert(train.load_images("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte"));
     assert(train.load_labels("../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte"));
     
-    std::cout << "a" << std::endl;
     // for (int i = 0; i < 10; i++) {
     //     auto [img, label] = train.get(i);
     //     img.assign(img.reshape({28, 28}));
     //     std::cout << "Label: " << ((int)label) << std::endl;
     //     for (int i = 0; i < 28; i++) {
     //         for (int j = 0; j < 28; j++) {
-    //             std::cout << (img[i][j] < 0.5 ? '.' : '@');
+    //             std::cout << (img[i][j] < 0.5f ? '.' : '@');
     //         }
     //         std::cout << std::endl;
     //     }
@@ -414,7 +411,15 @@ int main() {
 
     //run_tests();
 
-    quadreg();
+    //linreg();
+
+    //quadreg();
+    // Tensor<float> a = Tensor<>::normal({20, 20});
+    // //a.print();
+    // for (size_t i = 0; i < 100; i++) {
+    //     std::cout << i << std::endl;
+    //     (a + a)[0, 0].print();
+    // }
 
     // dataloader::MNISTDataset train;
     // assert(train.load_images("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte"));
@@ -441,7 +446,7 @@ int main() {
     // t.softmax().log().print();
     // t.log_softmax().print();
 
-    //mnist_mlp();
+    mnist_mlp();
 
     // Tensor<> t = Tensor<>::normal({2, 3, 3});
     // t.print();

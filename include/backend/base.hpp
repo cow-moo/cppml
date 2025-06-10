@@ -42,6 +42,14 @@ enum class ArgRedOp {
     Min,
 };
 
+inline std::ostream& operator<<(std::ostream& os, BackendType type) {
+    switch (type) {
+        case BackendType::CpuSingleThread: return os << "CpuSingleThread";
+        case BackendType::CpuMultiThread: return os << "CpuMultiThread";
+        default: return os << "Unknown";
+    }
+}
+
 template <typename T> class SharedBuffer;
 template <typename T> class CpuSingleThreadBuffer;
 template <typename T> class CpuMultiThreadBuffer;

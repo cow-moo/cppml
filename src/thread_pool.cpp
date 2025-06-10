@@ -8,7 +8,7 @@ ThreadPool::ThreadPool(size_t numThreads) : stop_(false), tasksInProgress_(0) {
                 std::function<void()> task;
                 {
                     std::unique_lock lock(mutex_);
-                    cv_.wait(lock, [this]() {
+                    cvTask_.wait(lock, [this]() {
                         return stop_ || !tasks_.empty();
                     });
 
@@ -20,25 +20,27 @@ ThreadPool::ThreadPool(size_t numThreads) : stop_(false), tasksInProgress_(0) {
                 }
 
                 task();
-                --tasksInProgress_;
-                cv_.notify_all();
+                {
+                    std::lock_guard lock(mutex_);
+                    --tasksInProgress_;
+                }
+                cvDone_.notify_all();
             }
         });
     }
 }
 
 void ThreadPool::enqueue(const std::function<void()>& task) {
-    //std::cout << "enqueued" << std::endl;
     {
         std::lock_guard lock(mutex_);
         tasks_.push(task);
     }
-    cv_.notify_one();
+    cvTask_.notify_one();
 }
 
 void ThreadPool::wait() {
     std::unique_lock lock(mutex_);
-    cv_.wait(lock, [this]() {
+    cvDone_.wait(lock, [this]() {
         return tasks_.empty() && tasksInProgress_ == 0;
     });
 }
@@ -48,7 +50,7 @@ ThreadPool::~ThreadPool() {
         std::lock_guard lock(mutex_);
         stop_ = true;
     }
-    cv_.notify_all();
+    cvTask_.notify_all();
     for (auto& t : workers_) {
         if (t.joinable()) t.join();
     }

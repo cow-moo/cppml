@@ -21,17 +21,11 @@ bool MNISTDataset::load_images(const std::string& path) {
 
     assert(magic == 2051 && rows == 28 && cols == 28);
 
+    std::vector<uint8_t> flat(28 * 28);
     images.reserve(num_images);
     for (uint32_t i = 0; i < num_images; ++i) {
-        images.emplace_back(Tensor<float>::zeros(Shape{28 * 28}));
-        //Tensor<float> img = Tensor<float>::zeros({1, 28 * 28});
-        for (int j = 0; j < 28 * 28; ++j) {
-            uint8_t byte;
-            file.read(reinterpret_cast<char*>(&byte), 1);
-            images.back()[j] = byte / 255.0f;
-            //img[0][j] = byte / 255.0f;
-        }
-        //images.emplace_back(img);
+        file.read(reinterpret_cast<char*>(flat.data()), 28 * 28);
+        images.emplace_back(Tensor<uint8_t>(flat).astype<float>() / 255.0f);
     }
 
     return true;

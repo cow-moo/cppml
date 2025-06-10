@@ -199,7 +199,7 @@ public:
         //size_t cnt = 0;
         auto fn = cpu_utils::binop_table<T, T, T>[static_cast<size_t>(op)];
         auto& pool = get_pool();
-
+        
         // Get full shape of other
         Shape shape(rShape);
         for (auto dim : reduceShape)
@@ -216,6 +216,7 @@ public:
         while (reduceDim > config::DEFAULT_CHUNK_SIZE) {
             // Dimension to reduce to (>1 due to comparison in while loop)
             size_t newDim = ceil_div(reduceDim, config::DEFAULT_CHUNK_SIZE);
+            assert(newDim < reduceDim);
 
             // Intermediate sum allocation
             size_t curSize = rShape.numel() * newDim;
@@ -252,6 +253,7 @@ public:
         while (rIt.flatIdx < rNumel) {
             // Number of elements in this buffer to write to
             size_t numElem = std::min(rNumel - rIt.flatIdx, config::DEFAULT_CHUNK_SIZE / reduceDim);
+            assert(numElem >= 1);
             //cnt++;
             //std::cout << numElem * reduceDim << std::endl;
             pool.enqueue([=] mutable { 
@@ -286,7 +288,6 @@ public:
                     size_t reduceDim, ArgRedOp op) {
         static_assert(std::is_same_v<T, size_t>, "arg_reduce only works with T = size_t");
         assert(other->backend_type() == BackendType::CpuMultiThread);
-        
         Shape otherShape(rShape);
         otherShape.push_back(reduceDim);
         auto otherIt = cpu_utils::StridedIterator<U>(static_cast<const CpuMultiThreadBuffer<U>*>(other)->data_, 
@@ -300,7 +301,9 @@ public:
         while (rIt.flatIdx < rNumel) {
             size_t numElem = std::min(rNumel - rIt.flatIdx, 
                                       std::max(config::DEFAULT_CHUNK_SIZE / reduceDim, (size_t)1)); // write at least one
-            pool.enqueue([=] mutable {
+            assert(numElem >= 1);
+            
+                                      pool.enqueue([=] mutable {
                 for (size_t i = 0; i < numElem; i++) {
                     std::pair<U, size_t> cur {*otherIt, 0};
                     ++otherIt;
@@ -352,6 +355,7 @@ public:
         while (rIt.flatIdx < rNumel) {
             size_t numElem = std::min(rNumel - rIt.flatIdx, 
                                       std::max(config::DEFAULT_CHUNK_SIZE / innerDim, (size_t)1)); // write at least one
+            assert(numElem >= 1);
 
             pool.enqueue([=] mutable {
                 while (numElem-- > 0) {
