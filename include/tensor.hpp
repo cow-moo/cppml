@@ -37,11 +37,11 @@ class Tensor {
 public:
     struct NestedInitializer;
 
-    Tensor(const NestedInitializer& initializer, backend::BackendType type = DEFAULT_BACKEND) : Tensor(initializer.shape, type) {
+    Tensor(const NestedInitializer& initializer, backend::BackendType type = config::DEFAULT_BACKEND) : Tensor(initializer.shape, type) {
         data_->write_flat(initializer.flatData);
     }
 
-    Tensor(const Shape& shape, backend::BackendType type = DEFAULT_BACKEND) 
+    Tensor(const Shape& shape, backend::BackendType type = config::DEFAULT_BACKEND) 
         : data_(shape.numel(), type), shape_(shape) {
         size_t totalSize = 1;
         for (int i = shape.size() - 1; i >= 0; i--) {
@@ -52,7 +52,7 @@ public:
     }
 
     // Needed to resolve ambiguity between NestedInitializer and Shape constructors
-    Tensor(const std::initializer_list<U>& list, backend::BackendType type = DEFAULT_BACKEND)
+    Tensor(const std::initializer_list<U>& list, backend::BackendType type = config::DEFAULT_BACKEND)
         : Tensor(NestedInitializer(list), type) {}
 
     Tensor(const Tensor& other)
@@ -77,8 +77,8 @@ public:
         return *this;
     }
 
-    static Tensor zeros(const Shape& shape) {
-        Tensor res(shape);
+    static Tensor zeros(const Shape& shape, backend::BackendType type = config::DEFAULT_BACKEND) {
+        Tensor res(shape, type);
 
         std::vector<U> flat(shape.numel(), 0);
         res.data_->write_flat(flat);
@@ -86,8 +86,8 @@ public:
         return res;
     }
 
-    static Tensor normal(const Shape& shape, U mean = 0, U std = 1, std::optional<uint> seed = std::nullopt) {
-        Tensor res(shape);
+    static Tensor normal(const Shape& shape, U mean = 0, U std = 1, std::optional<uint> seed = std::nullopt, backend::BackendType type = config::DEFAULT_BACKEND) {
+        Tensor res(shape, type);
 
         std::mt19937 generator(seed ? *seed : std::random_device{}());
         std::normal_distribution<U> distribution(mean, std);
@@ -102,6 +102,10 @@ public:
         res.data_->write_flat(flat);
 
         return res;
+    }
+
+    static Tensor normal(const Shape& shape, backend::BackendType type) {
+        return normal(shape, 0, 1, std::nullopt, type);
     }
 
     // Performs a deep copy that discards data not seen/accessed by the view
@@ -283,6 +287,7 @@ public:
     // 1D tensors have 1 appended (column vector)
     friend Tensor matmul(const Tensor& a, const Tensor& b) {
         assert(a.shape().size() > 0 && b.shape().size() > 0);
+        assert(a.data_->backend_type() == b.data_->backend_type());
 
         Shape aShape(a.shape()), bShape(b.shape());
         Strides aStrides(a.strides_), bStrides(b.strides_);
@@ -318,7 +323,7 @@ public:
         aOuterStrides.push_back(aStrides[-2]); aOuterStrides.push_back(aStrides[-1]);
         bOuterStrides.push_back(bStrides[-2]); bOuterStrides.push_back(bStrides[-1]);
 
-        Tensor res(rShape);
+        Tensor res(rShape, a.data_->backend_type());
 
         res.data_->matmul(rShape, res.strides_, res.offset_,
                           a.data_.get(), aOuterStrides, a.offset_,
@@ -357,10 +362,6 @@ public:
     }
 
     Tensor reshape(const Shape& newShape) const {
-        // Could modify to handle this case if necessary
-        if (shape_.size() == 0) {
-            throw std::invalid_argument("Invalid shape for reshape.");
-        }
         size_t size = 1;
         for (auto dim : shape_) {
             size *= dim;
@@ -373,6 +374,15 @@ public:
         }
         if (size != 1) {
             throw std::invalid_argument("Invalid shape for reshape.");
+        }
+
+        if (shape_.size() == 0) {
+            Tensor res(*this);
+            for (size_t i = 0; i < newShape.size(); i++) {
+                res.strides_.push_back(1);
+            }
+            res.shape_ = newShape;
+            return res;
         }
 
         size_t cur = 1;
@@ -468,6 +478,12 @@ public:
         return apply_unary<R>(backend::UnOp::Pass);
     }
 
+    Tensor to(backend::BackendType type) {
+        Tensor res(shape_, type);
+        res.data_->write_flat(data_->read_strided(shape_, strides_, offset_));
+        return res;
+    }
+
     // Cast Tensors with no dimension to scalar, implicit cast for cout/math
     operator U() const {
         if (shape_.size() > 0) {
@@ -482,13 +498,29 @@ public:
             os << ((U)t);
             return os;
         }
-        os << "[";
-        for (size_t i = 0; i < t.shape_[0]; i++) {
-            os << t[i];
-            if (i < t.shape_[0] - 1)
+        auto strided = t.data_->read_strided(t.shape_, t.strides_, t.offset_);
+
+        for (size_t i = 0; i < t.shape_.size(); i++)
+            os << "[";
+        for (size_t i = 0; i < strided.size(); i++) {
+            if (i != 0) {
+                size_t depth = 0, ii = i;
+                while (depth < t.shape_.size()) {
+                    if (ii % t.shape_[t.shape_.size() - 1 - depth] != 0)
+                        break;
+                    ii /= t.shape_[t.shape_.size() - 1 - depth];
+                    depth++;
+                }
+                for (size_t j = 0; j < depth; j++)
+                    os << "]";
                 os << ", ";
+                for (size_t j = 0; j < depth; j++)
+                    os << "[";
+            }
+            os << strided[i];
         }
-        os << "]";
+        for (size_t i = 0; i < t.shape_.size(); i++)
+            os << "]";
 
         return os;
     }
@@ -606,9 +638,10 @@ private:
 
     template <typename R = U, typename V = U>
     Tensor<R> apply_binary(const Tensor<V>& other, backend::BinOp op) const {
+        assert(data_->backend_type() == other.data_->backend_type());
         auto [shape, strides, otherStrides] = Shape::broadcast(shape_, strides_, other.shape_, other.strides_);
-        
-        Tensor<R> res(shape);
+
+        Tensor<R> res(shape, data_->backend_type());
 
         // We can const_cast because we know res != this and other
         res.data_->apply_binary(shape, res.strides_, res.offset_,
@@ -621,7 +654,7 @@ private:
 
     template <typename R = U, typename V = U>
     Tensor<R> apply_binary(V other, backend::BinOp op) const {
-        Tensor<R> res(shape_);
+        Tensor<R> res(shape_, data_->backend_type());
         res.data_->apply_binary(shape_, res.strides_, res.offset_,
                                 const_cast<backend::DeviceBuffer<U>*>(data_.get()), strides_, offset_,
                                 other, op);
@@ -661,7 +694,7 @@ private:
     // Func should have signature op(U) -> R
     template <typename R = U>
     Tensor<R> apply_unary(backend::UnOp op) const {
-        Tensor<R> res = Tensor<R>(shape_);
+        Tensor<R> res = Tensor<R>(shape_, data_->backend_type());
         // We can const_cast because we know res != this
         res.data_->apply_unary(shape_, res.strides_, res.offset_,
                                const_cast<backend::DeviceBuffer<U>*>(data_.get()), strides_, offset_, 
@@ -683,30 +716,71 @@ private:
         if (axes.size() == 0)
             return copy();
 
-        Shape newShape(shape_);
+        std::vector<bool> reduceAxis(shape_.size(), false);
 
-        for (auto x : axes) {
-            newShape[x] = 1;
-        }
-        
-        Tensor res(newShape);
-        res = identity;
-
-        Strides strides(res.strides_);
         for (auto x : axes) {
             if (x < 0) x += shape_.size();
-            strides[x] = 0;
+            if (x < 0 || x >= (int)shape_.size()) {
+                throw new std::invalid_argument("Bad axis for reduce");
+            }
+
+            reduceAxis[x] = true;
         }
 
-        res.data_->apply_binary(shape_, strides, res.offset_,
-                                res.data_.get(), strides, res.offset_,
-                                const_cast<backend::DeviceBuffer<U>*>(data_.get()), strides_, offset_,
-                                op);
+        Shape rShape, reduceShape;
+        Strides otherStrides;
+        for (size_t i = 0; i < shape_.size(); i++) {
+            if (!reduceAxis[i]) {
+                rShape.push_back(shape_[i]);
+                otherStrides.push_back(strides_[i]);
+            }
+        }
+        for (size_t i = 0; i < shape_.size(); i++) {
+            if (reduceAxis[i]) {
+                reduceShape.push_back(shape_[i]);
+                otherStrides.push_back(strides_[i]);
+            }
+        }
 
-        if (keepDims)
-            return res;
-        else
-            return res.squeeze(axes);
+        Tensor res(rShape, data_->backend_type());
+
+        res.data_->reduce(rShape, res.strides_, res.offset_,
+                          data_.get(), otherStrides, offset_,
+                          reduceShape, identity, op);
+
+        if (keepDims) {
+            Shape newShape(shape_);
+            for (auto x : axes)
+                newShape[x] = 1;
+            return res.reshape(newShape);
+        }
+
+        return res;
+
+        // Shape newShape(shape_);
+
+        // for (auto x : axes) {
+        //     newShape[x] = 1;
+        // }
+        
+        // Tensor res(newShape, data_->backend_type());
+        // res = identity;
+
+        // Strides strides(res.strides_);
+        // for (auto x : axes) {
+        //     if (x < 0) x += shape_.size();
+        //     strides[x] = 0;
+        // }
+
+        // res.data_->apply_binary(shape_, strides, res.offset_,
+        //                         res.data_.get(), strides, res.offset_,
+        //                         const_cast<backend::DeviceBuffer<U>*>(data_.get()), strides_, offset_,
+        //                         op);
+
+        // if (keepDims)
+        //     return res;
+        // else
+        //     return res.squeeze(axes);
     }
 
     Tensor<size_t> arg_reduce(int axis, backend::ArgRedOp op, bool keepDim) const {
@@ -721,11 +795,10 @@ private:
 
         Shape newShape(shape);
         newShape.pop_back();
-        Tensor<size_t> res(newShape);
+        Tensor<size_t> res(newShape, data_->backend_type());
         res.data_->arg_reduce(newShape, res.strides_, res.offset_,
-                              data_.get(), 
-                              shape, strides, offset_,
-                              op);
+                              data_.get(), strides, offset_,
+                              shape.back(), op);
 
         if (keepDim)
             return res.unsqueeze(axis);

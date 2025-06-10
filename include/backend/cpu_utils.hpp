@@ -51,39 +51,46 @@ struct StridedIterator {
     U* data;
     Shape shape;
     Strides strides;
-    std::array<size_t, MAX_SBO_DIMS> idxs;
+    std::array<size_t, config::MAX_SBO_DIMS> idxs;
+    size_t dataIdx;
     size_t flatIdx;
 
     StridedIterator(U* data, const Shape& shape, const Strides& strides, size_t offset) 
-        : data(data), shape(shape), strides(strides), idxs{}, flatIdx(offset) {}
+        : data(data), shape(shape), strides(strides), idxs{}, dataIdx(offset), flatIdx(0) {}
 
     U& operator*() {
-        return data[flatIdx];
+        return data[dataIdx];
     }
 
     StridedIterator& operator++() {
         for (int i = shape.size() - 1; i >= 0; i--) {
-            flatIdx += strides[i];
+            dataIdx += strides[i];
             if (++idxs[i] == shape[i]) {
                 idxs[i] = 0;
-                flatIdx -= strides[i] * shape[i];
+                dataIdx -= strides[i] * shape[i];
             }
             else break;
         }
+        flatIdx++;
         return *this;
     }
 
     StridedIterator& operator+=(size_t n) {
+        flatIdx += n;
+        
+        if (shape.size() == 0)
+            return *this;
+
         idxs[shape.size() - 1] += n;
-        flatIdx += n * strides[shape.size() - 1];
+        dataIdx += n * strides[shape.size() - 1];
 
         for (int i = shape.size() - 1; i >= 1; i--) {
             if (idxs[i] >= shape[i]) {
                 size_t num = idxs[i] / shape[i];
                 idxs[i] -= num * shape[i];
-                flatIdx -= num * shape[i] * strides[i];
+                dataIdx -= num * shape[i] * strides[i];
                 idxs[i - 1] += num;
-                flatIdx += num * strides[i - 1];
+                dataIdx += num * strides[i - 1];
             }
             else break;
         }
@@ -98,7 +105,7 @@ struct StridedIterator {
     }
 
     bool operator==(const StridedIterator& other) const {
-        return other.data == data && other.flatIdx == flatIdx;
+        return other.data == data && other.dataIdx == dataIdx;
     }
 };
 

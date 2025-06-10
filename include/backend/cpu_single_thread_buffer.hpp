@@ -40,6 +40,22 @@ public:
         std::copy(values.begin(), values.end(), data_);
     }
 
+    std::vector<T> read_flat() const override {
+        std::vector<T> res(size_);
+        std::copy(data_, data_ + size_, res.begin());
+        return res;
+    }
+
+    std::vector<T> read_strided(const Shape& shape, const Strides& strides, size_t offset) const override {
+        auto it = cpu_utils::StridedIterator(data_, shape, strides, offset);
+        std::vector<T> res(shape.numel());
+        for (size_t i = 0; i < res.size(); i++) {
+            res[i] = *it;
+            ++it;
+        }
+        return res;
+    }
+
     T& at(size_t i) override {
         if (i >= size_) throw std::out_of_range("CpuSingleThreadBuffer::at");
         return data_[i];
@@ -107,25 +123,48 @@ public:
         }
     }
 
+    void reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
+                const DeviceBuffer<T>* other, const Strides& otherStrides, size_t otherOffset,
+                const Shape& reduceShape, T identity, BinOp op) override {
+        assert(other->backend_type() == BackendType::CpuSingleThread);
+
+        apply_binary(rShape, rStrides, rOffset,
+                     this, rStrides, rOffset,
+                     identity, BinOp::Pass);
+
+        Shape shape(rShape);
+        Strides strides(rStrides);
+        for (auto x : reduceShape) {
+            shape.push_back(x);
+            strides.push_back(0);
+        }
+
+        apply_binary(shape, strides, rOffset,
+                     this, strides, rOffset,
+                     const_cast<DeviceBuffer<T>*>(other), otherStrides, otherOffset,
+                     op);
+    }
+
     // Reduce on last dimension
     template <typename U>
     void arg_reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
-                    const DeviceBuffer<U>* other, 
-                    const Shape& otherShape, const Strides& otherStrides, size_t otherOffset,
-                    ArgRedOp op) {
+                    const DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset,
+                    size_t reduceDim, ArgRedOp op) {
         static_assert(std::is_same_v<T, size_t>, "arg_reduce only works with T = size_t");
         assert(other->backend_type() == BackendType::CpuSingleThread);
+        
+        Shape otherShape(rShape);
+        otherShape.push_back(reduceDim);
         auto otherIt = cpu_utils::StridedIterator<U>(static_cast<const CpuSingleThreadBuffer<U>*>(other)->data_, 
                                           otherShape, otherStrides, otherOffset);
         auto rIt = cpu_utils::StridedIterator<T>(data_, rShape, rStrides, rOffset);
 
         auto fn = cpu_utils::argredop_table<U>[static_cast<size_t>(op)];
 
-        size_t innerDim = otherShape.back();
         for (size_t i = 0; i < rShape.numel(); i++) {
             std::pair<U, size_t> cur {*otherIt, 0};
             ++otherIt;
-            for (size_t j = 1; j < innerDim; j++) {
+            for (size_t j = 1; j < reduceDim; j++) {
                 fn(cur, {*otherIt, j});
                 ++otherIt;
             }
@@ -146,32 +185,31 @@ public:
 
         Shape outerShape(rShape);
         outerShape.pop_back(); outerShape.pop_back();
-        Strides rOuterStrides(rStrides);
-        rOuterStrides.pop_back(); rOuterStrides.pop_back();
         Strides aOuterStrides(aStrides);
         aOuterStrides.pop_back(); aOuterStrides.pop_back();
         Strides bOuterStrides(bStrides);
         bOuterStrides.pop_back(); bOuterStrides.pop_back();
 
-        auto rIt = cpu_utils::StridedIterator<T>(data_, outerShape, rOuterStrides, rOffset);
+        auto rIt = cpu_utils::StridedIterator<T>(data_, rShape, rStrides, rOffset);
         auto aIt = cpu_utils::StridedIterator<T>(aData, outerShape, aOuterStrides, aOffset);
         auto bIt = cpu_utils::StridedIterator<T>(bData, outerShape, bOuterStrides, bOffset);
         
         size_t rDim0 = rShape[-2], rDim1 = rShape[-1];
-        size_t rStride0 = rStrides[-2], rStride1 = rStrides[-1];
         size_t aStride0 = aStrides[-2], aStride1 = aStrides[-1];
         size_t bStride0 = bStrides[-2], bStride1 = bStrides[-1];
         for (size_t outer = 0; outer < outerShape.numel(); outer++) {
             for (size_t i = 0; i < rDim0; i++) {
                 for (size_t j = 0; j < rDim1; j++) {
-                    size_t index = rOffset + rStride0 * i + rStride1 * j;
-                    data_[index] = 0;
+                    *rIt = 0;
                     for (size_t k = 0; k < innerDim; k++) {
-                        data_[index] += aData[aOffset + aStride0 * i + aStride1 * k] *
-                                        bData[bOffset + bStride0 * k + bStride1 * j];
+                        *rIt += aData[aIt.dataIdx + aStride0 * i + aStride1 * k] *
+                                bData[bIt.dataIdx + bStride0 * k + bStride1 * j];
                     }
+                    ++rIt;
                 }
             }
+            ++aIt;
+            ++bIt;
         }
     }
 

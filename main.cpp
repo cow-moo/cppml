@@ -239,6 +239,7 @@ void linreg() {
 }
 
 void quadreg() {
+    std::cout << "ha" << std::endl;
     Tensor<> x = Tensor<>::zeros({100, 1});
     Tensor<> y = Tensor<>::zeros({100, 1});
     for (int i = 0; i < 100; ++i) {
@@ -254,6 +255,7 @@ void quadreg() {
     solver::GradientDescent gd(model.weights(), 0.01);
 
     for (int epoch = 0; epoch < 1000; epoch++) {
+        std::cout << epoch << std::endl;
         auto yPred = model(x);
         auto loss = loss::mse(yPred, y);
         loss.backward();
@@ -276,10 +278,12 @@ void quadreg() {
 }
 
 void mnist_mlp() {
+    std::cout << "hi" << std::endl;
     dataloader::MNISTDataset train;
     assert(train.load_images("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte"));
     assert(train.load_labels("../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte"));
     
+    std::cout << "a" << std::endl;
     // for (int i = 0; i < 10; i++) {
     //     auto [img, label] = train.get(i);
     //     img.assign(img.reshape({28, 28}));
@@ -367,16 +371,50 @@ void print_img(const Tensor<float>& img) {
 }
 
 int main() {
-    Tensor<float> a({{1, 2, 3}, {4, 5, 6}}, backend::BackendType::CpuMultiThread);
-    Tensor<float> b({{7, 8, 9}, {10, 11, 12}}, backend::BackendType::CpuSingleThread);
-    a.print();
-    b.print();
+    // Tensor<float> a = Tensor<float>::normal({3, 5}, backend::BackendType::CpuMultiThread);
+    // Tensor<float> b = Tensor<float>::normal({3, 5}, backend::BackendType::CpuMultiThread);
+    // a.print();
+    // b.print();    
+    //(a + b).print();
 
-    (a + b).print();
+    // Tensor<float> a = Tensor<float>::normal({1, 2, 3}, backend::BackendType::CpuMultiThread);
+    // a.print();
+    // Tensor<float> b = a.to(backend::BackendType::CpuSingleThread);
+    // b.print();
+    
+    // Tensor<float> a({{1, 2, 3}, {4, 5, 6}}, backend::BackendType::CpuSingleThread);
+    // a.sum({0}).print();
+    // a.sum({1}).print();
+    // a.sum({0, 1}).print();
+
+    //Tensor<float> a = Tensor<float>::normal({3, 10, 10}, backend::BackendType::CpuMultiThread);
+    //Tensor<float> b = a.to(backend::BackendType::CpuSingleThread);
+    //a.sum({0, 1}, true).print();
+    //b.sum({0, 1}, true).print();
+    // a.argmin().print();
+    // b.argmin().print();
+    // (a.argmax() == b.argmax().to(backend::BackendType::CpuMultiThread)).print();
+
+    //(matmul(a, a) == matmul(b, b).to(backend::BackendType::CpuMultiThread)).astype<size_t>().sum().print();
+    //matmul(a, a)[Range(), Range(2), Range(2)].print();
+    //matmul(b, b).print();
+
+    // Tensor<float> a({{{1, 2}, {3, 4}}, {{5, 6}, {7, 8}}});
+    // Tensor<float> b({{1, 1}, {1, 1}});
+    // a.print();
+    // b.print();
+    // matmul(a, b).print();
+
+    // Tensor<float> a({{1, 2, 3}, {4, 5, 6}}, backend::BackendType::CpuMultiThread);
+    // Tensor<float> b({{7, 8, 9}, {10, 11, 12}}, backend::BackendType::CpuSingleThread);
+    // a.print();
+    // b.print();
+
+    // (a + b).print();
 
     //run_tests();
 
-    //quadreg();
+    quadreg();
 
     // dataloader::MNISTDataset train;
     // assert(train.load_images("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte"));
@@ -403,7 +441,7 @@ int main() {
     // t.softmax().log().print();
     // t.log_softmax().print();
 
-    mnist_mlp();
+    //mnist_mlp();
 
     // Tensor<> t = Tensor<>::normal({2, 3, 3});
     // t.print();

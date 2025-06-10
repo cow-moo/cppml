@@ -64,6 +64,9 @@ public:
     // Writes a flattened tensor
     virtual void write_flat(const std::vector<T>& values) = 0;
 
+    virtual std::vector<T> read_flat() const = 0;
+    virtual std::vector<T> read_strided(const Shape&, const Strides&, size_t) const = 0;
+
     virtual T& at(size_t i) = 0;
     virtual const T& at(size_t i) const = 0;
 
@@ -90,14 +93,19 @@ public:
         BACKEND_DISPATCH(apply_unary(shape, rStrides, rOffset, other, otherStrides, otherOffset, op));
     }
 
+    // Reduce on last k dimensions (implied by reduceShape)
+    // otherShape = rShape + reduceShape
+    virtual void reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
+                const DeviceBuffer* other, const Strides& otherStrides, size_t otherOffset,
+                const Shape& reduceShape, T identity, BinOp op) = 0;
+
     // Reduce on last dimension
     template <typename U>
     void arg_reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
-                    const DeviceBuffer<U>* other, 
-                    const Shape& otherShape, const Strides& otherStrides, size_t otherOffset,
-                    ArgRedOp op) {
+                    const DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset,
+                    size_t reduceDim, ArgRedOp op) {
         static_assert(std::is_same_v<T, size_t>, "arg_reduce only works with T = size_t");
-        BACKEND_DISPATCH(arg_reduce(rShape, rStrides, rOffset, other, otherShape, otherStrides, otherOffset, op));
+        BACKEND_DISPATCH(arg_reduce(rShape, rStrides, rOffset, other, otherStrides, otherOffset, reduceDim, op));
     }
 
     virtual void matmul(const Shape& rShape, const Strides& rStrides, size_t rOffset,
