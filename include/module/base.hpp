@@ -12,7 +12,8 @@ using autodiff::ComputationGraph;
 template <typename T>
 class Module {
 public:
-    Module(std::string name="unnamed", std::shared_ptr<ComputationGraph> graph=nullptr) : name_(name), graph_(graph) {
+    Module(std::string name = "unnamed", 
+           std::shared_ptr<ComputationGraph> graph = nullptr) : name_(name), graph_(graph) {
         if (graph_ == nullptr) {
             graph_ = std::make_shared<ComputationGraph>();
         }
@@ -58,6 +59,7 @@ private:
     std::vector<std::shared_ptr<Module<T>>> submodules_;
     std::string name_;
     std::shared_ptr<ComputationGraph> graph_;
+    backend::BackendType type_;
 };
 
 }

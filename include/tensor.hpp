@@ -37,11 +37,11 @@ class Tensor {
 public:
     struct NestedInitializer;
 
-    Tensor(const NestedInitializer& initializer, backend::BackendType type = config::DEFAULT_BACKEND) : Tensor(initializer.shape, type) {
+    Tensor(const NestedInitializer& initializer, backend::BackendType type = backend::current_backend_type) : Tensor(initializer.shape, type) {
         data_->write_flat(initializer.flatData);
     }
 
-    Tensor(const Shape& shape, backend::BackendType type = config::DEFAULT_BACKEND) 
+    Tensor(const Shape& shape, backend::BackendType type = backend::current_backend_type) 
         : data_(shape.numel(), type), shape_(shape) {
         size_t totalSize = 1;
         for (int i = shape.size() - 1; i >= 0; i--) {
@@ -52,12 +52,12 @@ public:
     }
 
     // Needed to resolve ambiguity between NestedInitializer and Shape constructors
-    Tensor(const std::initializer_list<U>& list, backend::BackendType type = config::DEFAULT_BACKEND)
+    Tensor(const std::initializer_list<U>& list, backend::BackendType type = backend::current_backend_type)
         : Tensor(NestedInitializer(list), type) {}
 
     Tensor(const Tensor& other)
         : data_(other.data_), shape_(other.shape_), strides_(other.strides_), offset_(other.offset_) {}
-        
+
     // Elementwise assignment
     Tensor& operator=(U other) {
         return apply_binary_inplace(other, backend::BinOp::Pass);
@@ -77,7 +77,7 @@ public:
         return *this;
     }
 
-    static Tensor zeros(const Shape& shape, backend::BackendType type = config::DEFAULT_BACKEND) {
+    static Tensor zeros(const Shape& shape, backend::BackendType type = backend::current_backend_type) {
         Tensor res(shape, type);
 
         std::vector<U> flat(shape.numel(), 0);
@@ -86,7 +86,7 @@ public:
         return res;
     }
 
-    static Tensor normal(const Shape& shape, U mean = 0, U std = 1, std::optional<uint> seed = std::nullopt, backend::BackendType type = config::DEFAULT_BACKEND) {
+    static Tensor normal(const Shape& shape, U mean = 0, U std = 1, std::optional<uint> seed = std::nullopt, backend::BackendType type = backend::current_backend_type) {
         Tensor res(shape, type);
 
         std::mt19937 generator(seed ? *seed : std::random_device{}());
@@ -478,10 +478,14 @@ public:
         return apply_unary<R>(backend::UnOp::Pass);
     }
 
-    Tensor to(backend::BackendType type) {
+    Tensor to(backend::BackendType type) const {
         Tensor res(shape_, type);
         res.data_->write_flat(data_->read_strided(shape_, strides_, offset_));
         return res;
+    }
+
+    backend::BackendType backend_type() const {
+        return data_->backend_type();
     }
 
     // Cast Tensors with no dimension to scalar, implicit cast for cout/math

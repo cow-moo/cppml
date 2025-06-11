@@ -7,8 +7,7 @@
 namespace config {
 
 constexpr size_t MAX_SBO_DIMS = 6;
-constexpr backend::BackendType DEFAULT_BACKEND = backend::BackendType::CpuMultiThread;
-constexpr size_t DEFAULT_CHUNK_SIZE = 1024;
+constexpr backend::BackendType DEFAULT_BACKEND = backend::BackendType::CpuSingleThread;
 
 }
 

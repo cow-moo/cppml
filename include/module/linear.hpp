@@ -14,7 +14,7 @@ template <typename T = float>
 class Linear : public Module<T> {
 public:
     Linear(size_t inputDim, size_t outputDim, std::string name="linear", std::shared_ptr<ComputationGraph> graph=nullptr) : Module<T>(name, graph) {
-        W = this->register_weight("W", Tensor<T>::normal({inputDim, outputDim}, 0, sqrt(1.0f / inputDim)));
+        W = this->register_weight("W", Tensor<T>::normal({inputDim, outputDim}, 0, sqrt(1.0f / inputDim), std::nullopt));
         b = this->register_weight("b", Tensor<T>::zeros({outputDim}));
     }
 

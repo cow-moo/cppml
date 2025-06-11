@@ -7,6 +7,19 @@
 
 namespace backend {
 
+inline size_t current_chunk_size = 1 << 17;
+
+struct ChunkSizeGuard {
+    size_t prev;
+    ChunkSizeGuard(size_t newSize) {
+        prev = current_chunk_size;
+        current_chunk_size = newSize;
+    }
+    ~ChunkSizeGuard() {
+        current_chunk_size = prev;
+    }
+};
+
 static ThreadPool& get_pool() {
     static ThreadPool pool;
     return pool;
@@ -48,10 +61,10 @@ public:
         assert(values.size() == size_);
         auto it = values.begin();
         auto& pool = get_pool();
-        for (size_t i = 0; i < size_; i += config::DEFAULT_CHUNK_SIZE) {
+        for (size_t i = 0; i < size_; i += current_chunk_size) {
             pool.enqueue([=]() {
                 std::copy(it + i, 
-                          it + std::min(size_, i + config::DEFAULT_CHUNK_SIZE),
+                          it + std::min(size_, i + current_chunk_size),
                           data_ + i);
             });
         }
@@ -62,10 +75,10 @@ public:
         std::vector<T> res(size_);
         auto it = res.begin();
         auto& pool = get_pool();
-        for (size_t i = 0; i < size_; i += config::DEFAULT_CHUNK_SIZE) {
+        for (size_t i = 0; i < size_; i += current_chunk_size) {
             pool.enqueue([=]() {
                 std::copy(data_ + i, 
-                          data_ + std::min(size_, i + config::DEFAULT_CHUNK_SIZE),
+                          data_ + std::min(size_, i + current_chunk_size),
                           it + i);
             });
         }
@@ -82,15 +95,15 @@ public:
         size_t numel = shape.numel();
 
         auto& pool = get_pool();
-        for (size_t i = 0; i < numel; i += config::DEFAULT_CHUNK_SIZE) {
+        for (size_t i = 0; i < numel; i += current_chunk_size) {
             pool.enqueue([=]() mutable {
-                for (size_t j = i; j < std::min(numel, i + config::DEFAULT_CHUNK_SIZE); j++) {
+                for (size_t j = i; j < std::min(numel, i + current_chunk_size); j++) {
                     *rIt = *it;
                     ++rIt; ++it;
                 }
             });
-            rIt += config::DEFAULT_CHUNK_SIZE;
-            it += config::DEFAULT_CHUNK_SIZE;
+            rIt += current_chunk_size;
+            it += current_chunk_size;
         }
         pool.wait();
 
@@ -125,16 +138,16 @@ public:
         size_t numel = shape.numel();
 
         auto& pool = get_pool();
-        for (size_t i = 0; i < numel; i += config::DEFAULT_CHUNK_SIZE) {
+        for (size_t i = 0; i < numel; i += current_chunk_size) {
             pool.enqueue([=]() mutable {
-                for (size_t j = i; j < std::min(numel, i + config::DEFAULT_CHUNK_SIZE); j++) {
+                for (size_t j = i; j < std::min(numel, i + current_chunk_size); j++) {
                     *rIt = fn(*aIt, *bIt);
                     ++rIt; ++aIt; ++bIt;
                 }
             });
-            rIt += config::DEFAULT_CHUNK_SIZE;
-            aIt += config::DEFAULT_CHUNK_SIZE;
-            bIt += config::DEFAULT_CHUNK_SIZE;
+            rIt += current_chunk_size;
+            aIt += current_chunk_size;
+            bIt += current_chunk_size;
         }
         pool.wait();
     }
@@ -153,15 +166,15 @@ public:
         size_t numel = shape.numel();
 
         auto& pool = get_pool();
-        for (size_t i = 0; i < numel; i += config::DEFAULT_CHUNK_SIZE) {
+        for (size_t i = 0; i < numel; i += current_chunk_size) {
             pool.enqueue([=]() mutable {
-                for (size_t j = i; j < std::min(numel, i + config::DEFAULT_CHUNK_SIZE); j++) {
+                for (size_t j = i; j < std::min(numel, i + current_chunk_size); j++) {
                     *rIt = fn(*aIt, b);
                     ++rIt; ++aIt;
                 }
             });
-            rIt += config::DEFAULT_CHUNK_SIZE;
-            aIt += config::DEFAULT_CHUNK_SIZE;
+            rIt += current_chunk_size;
+            aIt += current_chunk_size;
         }
         pool.wait();
     }
@@ -179,15 +192,15 @@ public:
         size_t numel = shape.numel();
 
         auto& pool = get_pool();
-        for (size_t i = 0; i < numel; i += config::DEFAULT_CHUNK_SIZE) {
+        for (size_t i = 0; i < numel; i += current_chunk_size) {
             pool.enqueue([=]() mutable {
-                for (size_t j = i; j < std::min(numel, i + config::DEFAULT_CHUNK_SIZE); j++) {
+                for (size_t j = i; j < std::min(numel, i + current_chunk_size); j++) {
                     *rIt = fn(*otherIt);
                     ++rIt; ++otherIt;
                 }
             });
-            rIt += config::DEFAULT_CHUNK_SIZE;
-            otherIt += config::DEFAULT_CHUNK_SIZE;
+            rIt += current_chunk_size;
+            otherIt += current_chunk_size;
         }
         pool.wait();
     }
@@ -213,9 +226,9 @@ public:
         size_t reduceDim = reduceShape.numel();
 
         // Do intermediate reductions until remaining dimension to reduce fits in chunk size
-        while (reduceDim > config::DEFAULT_CHUNK_SIZE) {
+        while (reduceDim > current_chunk_size) {
             // Dimension to reduce to (>1 due to comparison in while loop)
-            size_t newDim = ceil_div(reduceDim, config::DEFAULT_CHUNK_SIZE);
+            size_t newDim = ceil_div(reduceDim, current_chunk_size);
             assert(newDim < reduceDim);
 
             // Intermediate sum allocation
@@ -227,7 +240,7 @@ public:
             for (size_t i = 0; i < curSize; i++) {
                 *curIt = identity;
                 // Ensure we don't reduce across boundaries determined by original reduceShape.numel
-                size_t amt = std::min(reduceDim - (prevIt.flatIdx % reduceDim), config::DEFAULT_CHUNK_SIZE);
+                size_t amt = std::min(reduceDim - (prevIt.flatIdx % reduceDim), current_chunk_size);
                 //cnt++;
                 //std::cout << amt << std::endl;
                 pool.enqueue([=] mutable {
@@ -252,7 +265,7 @@ public:
         size_t rNumel = rShape.numel();
         while (rIt.flatIdx < rNumel) {
             // Number of elements in this buffer to write to
-            size_t numElem = std::min(rNumel - rIt.flatIdx, config::DEFAULT_CHUNK_SIZE / reduceDim);
+            size_t numElem = std::min(rNumel - rIt.flatIdx, current_chunk_size / reduceDim);
             assert(numElem >= 1);
             //cnt++;
             //std::cout << numElem * reduceDim << std::endl;
@@ -300,7 +313,7 @@ public:
         size_t rNumel = rShape.numel();
         while (rIt.flatIdx < rNumel) {
             size_t numElem = std::min(rNumel - rIt.flatIdx, 
-                                      std::max(config::DEFAULT_CHUNK_SIZE / reduceDim, (size_t)1)); // write at least one
+                                      std::max(current_chunk_size / reduceDim, (size_t)1)); // write at least one
             assert(numElem >= 1);
             
                                       pool.enqueue([=] mutable {
@@ -352,11 +365,13 @@ public:
 
         auto& pool = get_pool();
 
+        // size_t cnt = 0;
         while (rIt.flatIdx < rNumel) {
             size_t numElem = std::min(rNumel - rIt.flatIdx, 
-                                      std::max(config::DEFAULT_CHUNK_SIZE / innerDim, (size_t)1)); // write at least one
+                                      std::max(current_chunk_size / innerDim, (size_t)1)); // write at least one
             assert(numElem >= 1);
 
+            // cnt++;
             pool.enqueue([=] mutable {
                 while (numElem-- > 0) {
                     *rIt = 0;
@@ -391,6 +406,7 @@ public:
                 }
             }
         }
+        //std::cout << cnt << std::endl;
         pool.wait();
     }
 

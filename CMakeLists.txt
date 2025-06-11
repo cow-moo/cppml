@@ -4,6 +4,11 @@ project(MyProject)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
+add_library(cpp182 STATIC
+    src/dataloader.cpp
+    src/thread_pool.cpp
+)
+
 add_executable(main 
     main.cpp
     src/dataloader.cpp

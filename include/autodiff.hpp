@@ -30,13 +30,13 @@ public:
 
     Expression(const Tensor<T>& value, std::string name="unnamed", ComputationGraph* graph=nullptr) : value_(value), name_(name), graph_(graph) {
         if (graph_) {
-            grad_.emplace(Tensor<T>::zeros(this->value().shape()));
+            grad_.emplace(Tensor<T>::zeros(this->value().shape(), value.backend_type()));
         }
     }
 
     Expression(const Tensor<T>& value, ComputationGraph* graph) : Expression(value, "unnamed", graph) {}
 
-    Expression(const Expression& other) 
+    Expression(const Expression& other)
         : value_(other.value_), grad_(other.grad_), name_(other.name_), graph_(other.graph_) {}
 
     // Rebinding assignment

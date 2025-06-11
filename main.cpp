@@ -6,6 +6,7 @@
 #include "dataloader.hpp"
 #include "loss.hpp"
 #include "backend.hpp"
+#include "scoped_timer.hpp"
 
 using linalg::Tensor;
 using linalg::Range;
@@ -280,18 +281,6 @@ void mnist_mlp() {
     dataloader::MNISTDataset train;
     assert(train.load_images("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte"));
     assert(train.load_labels("../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte"));
-    
-    // for (int i = 0; i < 10; i++) {
-    //     auto [img, label] = train.get(i);
-    //     img.assign(img.reshape({28, 28}));
-    //     std::cout << "Label: " << ((int)label) << std::endl;
-    //     for (int i = 0; i < 28; i++) {
-    //         for (int j = 0; j < 28; j++) {
-    //             std::cout << (img[i][j] < 0.5f ? '.' : '@');
-    //         }
-    //         std::cout << std::endl;
-    //     }
-    // }
 
     std::vector<Tensor<float>> y;
     for (uint8_t label : train.labels) {
@@ -320,14 +309,6 @@ void mnist_mlp() {
 
     std::cout << "Ready" << std::endl;
 
-    // auto it = dl.begin();
-    // auto [xBatch, yBatch] = *it;
-
-    // auto logits = model(xBatch);
-    // auto loss = loss::cross_entropy_logits(logits, yBatch);
-
-    // loss.backward();
-
     Tensor<size_t> yPred = model(xTest).value().argmax();
     int correct = (yPred == yTest).astype<int>().sum();
     std::cout << "Test accuracy: " << correct << " / " << test.images.size() << " = " << ((float)correct / test.images.size()) << std::endl;
@@ -343,7 +324,6 @@ void mnist_mlp() {
             loss.backward();
             gd.step();
             gd.zero_grad();
-            //yPred.value.print();
             dl.shuffle();
         }
         std::cout << "Average epoch training loss: " << totalLoss / cnt << std::endl;
@@ -446,7 +426,31 @@ int main() {
     // t.softmax().log().print();
     // t.log_softmax().print();
 
-    mnist_mlp();
+    // {
+    //     backend::BackendGuard guard(backend::BackendType::CpuSingleThread);
+    //     timing::ScopedTimer timer("single thread");
+    //     Tensor<float> t = Tensor<float>::normal({128, 128});
+    //     matmul(t, t);
+    // }
+
+    // for (size_t e = 10; e <= 20; e++) {
+    //     backend::BackendGuard backendGuard(backend::BackendType::CpuMultiThread);
+    //     backend::ChunkSizeGuard chunkGuard(1 << e);
+    //     timing::ScopedTimer timer("multi thread " + std::to_string(1 << e));
+    //     Tensor<float> t = Tensor<float>::normal({128, 128});
+    //     matmul(t, t);
+    // }
+
+    // {
+    //     backend::BackendGuard guard(backend::BackendType::CpuSingleThread);
+    //     mnist_mlp();
+    // }
+
+    {
+        backend::BackendGuard guard(backend::BackendType::CpuMultiThread);
+        mnist_mlp();
+    }
+    
 
     // Tensor<> t = Tensor<>::normal({2, 3, 3});
     // t.print();
