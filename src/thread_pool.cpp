@@ -45,6 +45,10 @@ void ThreadPool::wait() {
     });
 }
 
+size_t ThreadPool::get_num_threads() {
+    return workers_.size();
+}
+
 ThreadPool::~ThreadPool() {
     {
         std::lock_guard lock(mutex_);

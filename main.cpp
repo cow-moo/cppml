@@ -429,15 +429,15 @@ int main() {
     // {
     //     backend::BackendGuard guard(backend::BackendType::CpuSingleThread);
     //     timing::ScopedTimer timer("single thread");
-    //     Tensor<float> t = Tensor<float>::normal({128, 128});
+    //     Tensor<float> t = Tensor<float>::normal({1024, 1024});
     //     matmul(t, t);
     // }
 
     // for (size_t e = 10; e <= 20; e++) {
     //     backend::BackendGuard backendGuard(backend::BackendType::CpuMultiThread);
-    //     backend::ChunkSizeGuard chunkGuard(1 << e);
     //     timing::ScopedTimer timer("multi thread " + std::to_string(1 << e));
-    //     Tensor<float> t = Tensor<float>::normal({128, 128});
+    //     //backend::current_chunk_size = 1 << e;
+    //     Tensor<float> t = Tensor<float>::normal({1024, 1024});
     //     matmul(t, t);
     // }
 
@@ -446,11 +446,65 @@ int main() {
     //     mnist_mlp();
     // }
 
-    {
-        backend::BackendGuard guard(backend::BackendType::CpuMultiThread);
-        mnist_mlp();
-    }
+    // {
+    //     backend::BackendGuard guard(backend::BackendType::CpuMultiThread);
+    //     mnist_mlp();
+    // }
+
+    // std::vector<Tensor<>> multi;
+    // for (size_t x : {100, 10000, 1000000, 100000000}) {
+    //     backend::BackendGuard guard(backend::BackendType::CpuMultiThread);
+    //     multi.push_back(Tensor<>::normal({x}));
+    // }
+
+    // std::vector<Tensor<>> single;
+    // for (auto &t : multi) {
+    //     single.push_back(t.to(backend::BackendType::CpuSingleThread));
+    // }
+
+    // for (auto& t : multi) {
+    //     //backend::BackendGuard guard(backend::BackendType::CpuMultiThread);
+    //     timing::ScopedTimer timer("multi thread " + std::to_string(t.shape()[0]));
+
+    //     //Tensor<> a = Tensor<>::normal({x});
+    //     t.sum();
+    //     //t + t;
+    // }
+
+    // for (auto& t : single) {
+    //     //backend::BackendGuard guard(backend::BackendType::CpuSingleThread);
+    //     timing::ScopedTimer timer("single thread " + std::to_string(t.shape()[0]));
+
+    //     //Tensor<> a = Tensor<>::normal({x}); 
+    //     t.sum();
+    //     //t + t;
+    // }
+
+    // Tensor<> a = Tensor<>::normal({10, 1000, 1000});
+    // a.sum({1, 2}).print();
+
+    // Tensor<> b = a.to(backend::BackendType::CpuSingleThread);
+    // b.sum({1, 2}).print();
     
+    Tensor<> multi = Tensor<float>::normal({10240, 10240}, backend::BackendType::CpuMultiThread);
+    Tensor<> single = multi.to(backend::BackendType::CpuSingleThread);
+
+    {
+        timing::ScopedTimer timer("single thread");
+        //matmul(single, single);//.sum().print();
+        single.argmax(1).sum().print();
+    }
+
+    {
+        timing::ScopedTimer timer("multi thread");
+        //matmul(multi, multi);//.sum().print();
+        multi.argmax(1).sum().print();
+    }
+/*
+single thread: 1386.31 ms
+20 x (53686272 + 1024)
+multi thread: 231.548 ms
+*/
 
     // Tensor<> t = Tensor<>::normal({2, 3, 3});
     // t.print();

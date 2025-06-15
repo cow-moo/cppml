@@ -7,23 +7,50 @@
 
 namespace backend {
 
-inline size_t current_chunk_size = 1 << 17;
-
-struct ChunkSizeGuard {
-    size_t prev;
-    ChunkSizeGuard(size_t newSize) {
-        prev = current_chunk_size;
-        current_chunk_size = newSize;
-    }
-    ~ChunkSizeGuard() {
-        current_chunk_size = prev;
-    }
-};
-
 static ThreadPool& get_pool() {
     static ThreadPool pool;
     return pool;
 }
+
+// As task size increases, first saturate first chunk up to min_chunk_size * 2
+// Then, saturate num chunks while maintaining min chunk size
+// After we hit max chunks, begin to increase chunk size
+static size_t min_chunk_size = 1 << 17; //1 << 17;
+static size_t max_chunks = get_pool().get_num_threads() * 2;
+
+// static size_t get_chunk_size(size_t taskSize) {
+//     if (taskSize < min_chunk_size)
+//         return taskSize;
+//     size_t lChunkSize = std::max(min_chunk_size, taskSize / max_chunks);
+//     assert(lChunkSize <= taskSize);
+//     size_t rChunkSize = taskSize / (taskSize / lChunkSize);
+//     return rChunkSize;
+//     // taskSize = 91
+//     // lChunkSize = 40
+//     // -> rChunkSize = 45
+// }
+
+static size_t get_num_chunks(size_t taskSize) {
+    // If res < max_chunks, then res * min_chunk_size <= taskSize < (res + 1) * min_chunk_size
+    return std::max((size_t)1, std::min(max_chunks, taskSize / min_chunk_size));
+}
+
+inline size_t current_chunk_size = 1 << 17;
+
+struct ChunkParamGuard {
+    size_t prevMinChunkSize;
+    size_t prevMaxChunks;
+    ChunkParamGuard(size_t newMinChunkSize, size_t newMaxChunks) {
+        prevMinChunkSize = min_chunk_size;
+        prevMaxChunks = max_chunks;
+        min_chunk_size = newMinChunkSize;
+        max_chunks = newMaxChunks;
+    }
+    ~ChunkParamGuard() {
+        min_chunk_size = prevMinChunkSize;
+        max_chunks = prevMaxChunks;
+    }
+};
 
 template <typename T>
 static constexpr T ceil_div(T a, T b) {
@@ -61,13 +88,23 @@ public:
         assert(values.size() == size_);
         auto it = values.begin();
         auto& pool = get_pool();
-        for (size_t i = 0; i < size_; i += current_chunk_size) {
-            pool.enqueue([=]() {
-                std::copy(it + i, 
-                          it + std::min(size_, i + current_chunk_size),
-                          data_ + i);
+
+        size_t numChunks = get_num_chunks(size_);
+        size_t base = size_ / numChunks;
+        size_t remainder = size_ % numChunks;
+
+        size_t cur = 0;
+        for (size_t i = 0; i < numChunks; i++) {
+            size_t chunkSize = base + (i < remainder);
+            pool.enqueue([=] {
+                std::copy(it + cur,
+                          it + cur + chunkSize,
+                          data_ + cur);
             });
+            cur += chunkSize;
         }
+        assert(cur == size_);
+
         pool.wait();
     }
 
@@ -75,13 +112,23 @@ public:
         std::vector<T> res(size_);
         auto it = res.begin();
         auto& pool = get_pool();
-        for (size_t i = 0; i < size_; i += current_chunk_size) {
-            pool.enqueue([=]() {
-                std::copy(data_ + i, 
-                          data_ + std::min(size_, i + current_chunk_size),
-                          it + i);
+
+        size_t numChunks = get_num_chunks(size_);
+        size_t base = size_ / numChunks;
+        size_t remainder = size_ % numChunks;
+        
+        size_t cur = 0;
+        for (size_t i = 0; i < numChunks; i++) {
+            size_t chunkSize = base + (i < remainder);
+            pool.enqueue([=] {
+                std::copy(data_ + cur,
+                          data_ + cur + chunkSize,
+                          it + cur);
             });
+            cur += chunkSize;
         }
+        assert(cur == size_);
+
         pool.wait();
 
         return res;
@@ -95,16 +142,24 @@ public:
         size_t numel = shape.numel();
 
         auto& pool = get_pool();
-        for (size_t i = 0; i < numel; i += current_chunk_size) {
-            pool.enqueue([=]() mutable {
-                for (size_t j = i; j < std::min(numel, i + current_chunk_size); j++) {
+
+        size_t numChunks = get_num_chunks(numel);
+        size_t base = numel / numChunks;
+        size_t remainder = numel % numChunks;
+
+        for (size_t i = 0; i < numChunks; i++) {
+            size_t chunkSize = base + (i < remainder);
+            pool.enqueue([=] mutable {
+                for (size_t j = 0; j < chunkSize; j++) {
                     *rIt = *it;
                     ++rIt; ++it;
                 }
             });
-            rIt += current_chunk_size;
-            it += current_chunk_size;
+            rIt += chunkSize;
+            it += chunkSize;
         }
+        assert(rIt == res.end());
+
         pool.wait();
 
         return res;
@@ -138,17 +193,24 @@ public:
         size_t numel = shape.numel();
 
         auto& pool = get_pool();
-        for (size_t i = 0; i < numel; i += current_chunk_size) {
-            pool.enqueue([=]() mutable {
-                for (size_t j = i; j < std::min(numel, i + current_chunk_size); j++) {
+
+        size_t numChunks = get_num_chunks(numel);
+        size_t base = numel / numChunks;
+        size_t remainder = numel % numChunks;
+
+        for (size_t i = 0; i < numChunks; i++) {
+            size_t chunkSize = base + (i < remainder);
+            pool.enqueue([=] mutable {
+                for (size_t j = 0; j < chunkSize; j++) {
                     *rIt = fn(*aIt, *bIt);
                     ++rIt; ++aIt; ++bIt;
                 }
             });
-            rIt += current_chunk_size;
-            aIt += current_chunk_size;
-            bIt += current_chunk_size;
+            rIt += chunkSize;
+            aIt += chunkSize;
+            bIt += chunkSize;
         }
+        assert(rIt.flatIdx == numel);
         pool.wait();
     }
 
@@ -166,16 +228,23 @@ public:
         size_t numel = shape.numel();
 
         auto& pool = get_pool();
-        for (size_t i = 0; i < numel; i += current_chunk_size) {
-            pool.enqueue([=]() mutable {
-                for (size_t j = i; j < std::min(numel, i + current_chunk_size); j++) {
+
+        size_t numChunks = get_num_chunks(numel);
+        size_t base = numel / numChunks;
+        size_t remainder = numel % numChunks;
+
+        for (size_t i = 0; i < numChunks; i++) {
+            size_t chunkSize = base + (i < remainder);
+            pool.enqueue([=] mutable {
+                for (size_t j = 0; j < chunkSize; j++) {
                     *rIt = fn(*aIt, b);
                     ++rIt; ++aIt;
                 }
             });
-            rIt += current_chunk_size;
-            aIt += current_chunk_size;
+            rIt += chunkSize;
+            aIt += chunkSize;
         }
+        assert(rIt.flatIdx == numel);
         pool.wait();
     }
 
@@ -192,16 +261,23 @@ public:
         size_t numel = shape.numel();
 
         auto& pool = get_pool();
-        for (size_t i = 0; i < numel; i += current_chunk_size) {
-            pool.enqueue([=]() mutable {
-                for (size_t j = i; j < std::min(numel, i + current_chunk_size); j++) {
+
+        size_t numChunks = get_num_chunks(numel);
+        size_t base = numel / numChunks;
+        size_t remainder = numel % numChunks;
+
+        for (size_t i = 0; i < numChunks; i++) {
+            size_t chunkSize = base + (i < remainder);
+            pool.enqueue([=] mutable {
+                for (size_t j = 0; j < chunkSize; j++) {
                     *rIt = fn(*otherIt);
                     ++rIt; ++otherIt;
                 }
             });
-            rIt += current_chunk_size;
-            otherIt += current_chunk_size;
+            rIt += chunkSize;
+            otherIt += chunkSize;
         }
+        assert(rIt.flatIdx == numel);
         pool.wait();
     }
 
@@ -209,86 +285,93 @@ public:
                 const DeviceBuffer<T>* other, const Strides& otherStrides, size_t otherOffset,
                 const Shape& reduceShape, T identity, BinOp op) override {
         assert(other->backend_type() == BackendType::CpuMultiThread);
-        //size_t cnt = 0;
+
+        size_t numChunks_ = 0;
+        size_t chunkSize_ = 0;
+        size_t plus_ = 0;
+
         auto fn = cpu_utils::binop_table<T, T, T>[static_cast<size_t>(op)];
         auto& pool = get_pool();
-        
-        // Get full shape of other
+
         Shape shape(rShape);
         for (auto dim : reduceShape)
             shape.push_back(dim);
 
-        T* otherData = static_cast<const CpuMultiThreadBuffer*>(other)->data_;
-
-        // Intermediate sum
-        auto prevIt = cpu_utils::StridedIterator<T>(otherData, shape, otherStrides, otherOffset);
-        // Remaining dimension to reduce for intermediate sum
         size_t reduceDim = reduceShape.numel();
 
-        // Do intermediate reductions until remaining dimension to reduce fits in chunk size
-        while (reduceDim > current_chunk_size) {
-            // Dimension to reduce to (>1 due to comparison in while loop)
-            size_t newDim = ceil_div(reduceDim, current_chunk_size);
-            assert(newDim < reduceDim);
+        T* otherData = static_cast<const CpuMultiThreadBuffer*>(other)->data_;
+        auto otherIt = cpu_utils::StridedIterator<T>(otherData, shape, otherStrides, otherOffset);
+        auto rIt = cpu_utils::StridedIterator<T>(data_, rShape, rStrides, rOffset);
 
-            // Intermediate sum allocation
-            size_t curSize = rShape.numel() * newDim;
-            T* cur = new T[curSize];
-            auto curIt = cpu_utils::StridedIterator<T>(cur, {curSize}, {1}, 0);
+        // Only need to have intermediate results if rShape small and reduceDim large
+        size_t intermediateDim = std::min(max_chunks / rShape.numel(), reduceDim / min_chunk_size);
+        if (intermediateDim >= 2) {
+            size_t base = reduceDim / intermediateDim;
+            size_t remainder = reduceDim % intermediateDim;
+            std::vector<T> intermediate(rShape.numel() * intermediateDim, identity);
 
-            // thread per element in cursize
-            for (size_t i = 0; i < curSize; i++) {
-                *curIt = identity;
-                // Ensure we don't reduce across boundaries determined by original reduceShape.numel
-                size_t amt = std::min(reduceDim - (prevIt.flatIdx % reduceDim), current_chunk_size);
-                //cnt++;
-                //std::cout << amt << std::endl;
-                pool.enqueue([=] mutable {
-                    for (size_t j = 0; j < amt; j++) {
-                        *curIt = fn(*curIt, *prevIt);
-                        ++prevIt;
-                    }
-                });
-                
-                prevIt += amt;
-                ++curIt;
+            // Chunk size >= min_chunk_size
+            assert (base >= min_chunk_size);
+            // Total threads <= max_chunks
+            assert(intermediate.size() <= max_chunks);
+
+            numChunks_ = intermediate.size();
+            chunkSize_ = base;
+            plus_ = remainder == 0 ? 0 : 1;
+
+            //std::cout << "intermediate " << intermediate.size() << std::endl;
+
+            for (size_t i = 0; i < rShape.numel(); i++) {
+                for (size_t j = 0; j < intermediateDim; j++) {
+                    size_t chunkSize = base + (j < remainder);
+                    pool.enqueue([=, &intermediate] mutable {
+                        for (size_t k = 0; k < chunkSize; k++) {
+                            intermediate[i * intermediateDim + j] = fn(intermediate[i * intermediateDim + j], *otherIt);
+                            ++otherIt;
+                        }
+                    });
+                    otherIt += chunkSize;
+                }
             }
             pool.wait();
 
-            if (prevIt.data != otherData)
-                delete[] prevIt.data;
-            prevIt = cpu_utils::StridedIterator<T>(cur, {curSize}, {1}, 0);
-            reduceDim = newDim;
-        }
-
-        auto rIt = cpu_utils::StridedIterator<T>(data_, rShape, rStrides, rOffset);
-        size_t rNumel = rShape.numel();
-        while (rIt.flatIdx < rNumel) {
-            // Number of elements in this buffer to write to
-            size_t numElem = std::min(rNumel - rIt.flatIdx, current_chunk_size / reduceDim);
-            assert(numElem >= 1);
-            //cnt++;
-            //std::cout << numElem * reduceDim << std::endl;
-            pool.enqueue([=] mutable { 
-                for (size_t i = 0; i < numElem; i++) {
-                    *rIt = identity;
-                    for (size_t j = 0; j < reduceDim; j++) {
-                        *rIt = fn(*rIt, *prevIt);
-                        ++prevIt;
-                    }
-                    ++rIt;
+            for (size_t i = 0; i < rShape.numel(); i++) {
+                *rIt = identity;
+                for (size_t j = 0; j < intermediateDim; j++) {
+                    *rIt = fn(*rIt, intermediate[i * intermediateDim + j]);
                 }
-            });
-
-            rIt += numElem;
-            prevIt += numElem * reduceDim;
+                ++rIt;
+            }
         }
-        pool.wait();
+        else {
+            size_t minNumOuter = ceil_div(min_chunk_size, reduceDim);
+            size_t numChunks = std::max((size_t)1, std::min(max_chunks, rShape.numel() / minNumOuter));
+            size_t base = rShape.numel() / numChunks;
+            size_t remainder = rShape.numel() % numChunks;
 
-        if (prevIt.data != otherData)
-            delete[] prevIt.data;
+            numChunks_ = numChunks;
+            chunkSize_ = base * reduceDim;
+            plus_ = remainder == 0 ? 0 : reduceDim;
 
-        //std::cout << "threads dispatched: " << cnt << std::endl;
+            for (size_t i = 0; i < numChunks; i++) {
+                size_t chunkSize = base + (i < remainder);
+                pool.enqueue([=] mutable {
+                    for (size_t j = 0; j < chunkSize; j++) {
+                        *rIt = identity;
+                        for (size_t k = 0; k < reduceDim; k++) {
+                            *rIt = fn(*rIt, *otherIt);
+                            ++otherIt;
+                        }
+                        ++rIt;
+                    }
+                });
+                rIt += chunkSize;
+                otherIt += chunkSize * reduceDim;
+            }
+            pool.wait();
+        }
+
+        //std::cout << numChunks_ << " x (" << chunkSize_ << " + " << plus_ << ")" << std::endl;
     }
 
 
@@ -311,13 +394,21 @@ public:
         auto& pool = get_pool();
 
         size_t rNumel = rShape.numel();
-        while (rIt.flatIdx < rNumel) {
-            size_t numElem = std::min(rNumel - rIt.flatIdx, 
-                                      std::max(current_chunk_size / reduceDim, (size_t)1)); // write at least one
-            assert(numElem >= 1);
-            
-                                      pool.enqueue([=] mutable {
-                for (size_t i = 0; i < numElem; i++) {
+        size_t minNumOuter = ceil_div(min_chunk_size, reduceDim);
+        size_t numChunks = std::max((size_t)1, std::min(max_chunks, rNumel / minNumOuter));
+        size_t base = rNumel / numChunks;
+        size_t remainder = rNumel % numChunks;
+
+        size_t numChunks_ = numChunks;
+        size_t chunkSize_ = base * reduceDim;
+        size_t plus_ = remainder == 0 ? 0 : reduceDim;
+        
+        //std::cout << numChunks_ << " x (" << chunkSize_ << " + " << plus_ << ")" << std::endl;
+
+        for (size_t i = 0; i < numChunks; i++) {
+            size_t chunkSize = base + (i < remainder);
+            pool.enqueue([=] mutable {
+                for (size_t i = 0; i < chunkSize; i++) {
                     std::pair<U, size_t> cur {*otherIt, 0};
                     ++otherIt;
                     for (size_t j = 1; j < reduceDim; j++) {
@@ -329,8 +420,8 @@ public:
                 }
             });
 
-            rIt += numElem;
-            otherIt += numElem * reduceDim;
+            rIt += chunkSize;
+            otherIt += chunkSize * reduceDim;
         }
         pool.wait();
     }
@@ -365,15 +456,21 @@ public:
 
         auto& pool = get_pool();
 
-        // size_t cnt = 0;
-        while (rIt.flatIdx < rNumel) {
-            size_t numElem = std::min(rNumel - rIt.flatIdx, 
-                                      std::max(current_chunk_size / innerDim, (size_t)1)); // write at least one
-            assert(numElem >= 1);
+        size_t minNumOuter = ceil_div(min_chunk_size, innerDim);
+        size_t numChunks = std::max((size_t)1, std::min(max_chunks, rNumel / minNumOuter));
+        size_t base = rNumel / numChunks;
+        size_t remainder = rNumel / numChunks;
 
-            // cnt++;
+        size_t numChunks_ = numChunks;
+        size_t chunkSize_ = base * innerDim;
+        size_t plus_ = remainder == 0 ? 0 : innerDim;
+
+        //std::cout << numChunks_ << " x (" << chunkSize_ << " + " << plus_ << ")" << std::endl;
+
+        for (size_t c = 0; c < numChunks; c++) {
+            size_t chunkSize = base + (c < remainder);
             pool.enqueue([=] mutable {
-                while (numElem-- > 0) {
+                while (chunkSize-- > 0) {
                     *rIt = 0;
                     for (size_t k = 0; k < innerDim; k++) {
                         *rIt += aData[aIt.dataIdx + aStride0 * i + aStride1 * k] *
@@ -394,8 +491,8 @@ public:
                 }
             });
 
-            rIt += numElem;
-            j += numElem;
+            rIt += chunkSize;
+            j += chunkSize;
             if (j >= rDim1) {
                 i += j / rDim1;
                 j %= rDim1;

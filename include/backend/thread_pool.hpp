@@ -16,6 +16,7 @@ public:
 
     void enqueue(const std::function<void()>& task);
     void wait(); // Wait until all tasks finish
+    size_t get_num_threads();
 
 private:
     std::vector<std::thread> workers_;
