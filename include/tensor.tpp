@@ -104,27 +104,6 @@ Tensor<U> Tensor<U>::at(Args&&... args) const {
 
 /* ===== Arithmetic ===== */
 
-// Tensor and Tensor
-template <typename U>
-Tensor<U> operator+(const Tensor<U>& a, const Tensor<U>& b) {
-    return a.apply_binary(b, backend::BinOp::Add);
-}
-
-template <typename U>
-Tensor<U> operator-(const Tensor<U>& a, const Tensor<U>& b) {
-    return a.apply_binary(b, backend::BinOp::Sub);
-}
-
-template <typename U>
-Tensor<U> operator*(const Tensor<U>& a, const Tensor<U>& b) {
-    return a.apply_binary(b, backend::BinOp::Mul);
-}
-
-template <typename U>
-Tensor<U> operator/(const Tensor<U>& a, const Tensor<U>& b) {
-    return a.apply_binary(b, backend::BinOp::Div);
-}
-
 // Tensor and Scalar
 template <typename U>
 Tensor<U> Tensor<U>::operator+(U other) const {
@@ -144,16 +123,6 @@ Tensor<U> Tensor<U>::operator*(U other) const {
 template <typename U>
 Tensor<U> Tensor<U>::operator/(U other) const {
     return apply_binary(other, backend::BinOp::Div);
-}
-
-template <typename U>
-Tensor<U> operator-(U a, const Tensor<U>& b) {
-    return b.apply_binary(a, backend::BinOp::SubBy);
-}
-
-template <typename U>
-Tensor<U> operator/(U a, const Tensor<U>& b) {
-    return b.apply_binary(a, backend::BinOp::DivBy);
 }
 
 // Inplace
@@ -198,22 +167,6 @@ Tensor<U>& Tensor<U>::operator/=(U other) {
 }
 
 /* ===== Comparison ===== */
-
-// Tensor and Tensor
-template <typename U>
-Tensor<bool> operator==(const Tensor<U>& a, const Tensor<U>& b) {
-    return a.template apply_binary<bool>(b, backend::BinOp::Eq);
-}
-
-template <typename U>
-Tensor<bool> operator<(const Tensor<U>& a, const Tensor<U>& b) {
-    return a.template apply_binary<bool>(b, backend::BinOp::Lt);
-}
-
-template <typename U>
-Tensor<bool> operator<=(const Tensor<U>& a, const Tensor<U>& b) {
-    return a.template apply_binary<bool>(b, backend::BinOp::Lte);
-}
 
 // Tensor and Scalar
 template <typename U>
@@ -346,11 +299,11 @@ Tensor<U> Tensor<U>::broadcast_reduce_to(const Shape& shape) {
 /* ===== Linear Algebra ===== */
 
 template <typename U>
-Tensor<U> matmul(const Tensor<U>& a, const Tensor<U>& b) {
-    assert(a.shape().size() > 0 && b.shape().size() > 0);
-    assert(a.data_->backend_type() == b.data_->backend_type());
-    Shape aShape(a.shape()), bShape(b.shape());
-    Strides aStrides(a.strides_), bStrides(b.strides_);
+Tensor<U> Tensor<U>::matmul(const Tensor& other) const {
+    assert(shape().size() > 0 && other.shape().size() > 0);
+    assert(data_->backend_type() == other.data_->backend_type());
+    Shape aShape(shape()), bShape(other.shape());
+    Strides aStrides(strides_), bStrides(other.strides_);
     if (aShape.size() == 1) {
         aShape.push_back(1);
         aStrides.push_back(0);
@@ -360,7 +313,7 @@ Tensor<U> matmul(const Tensor<U>& a, const Tensor<U>& b) {
         bStrides.push_back(0);
     }
     if (aShape[-1] != bShape[-2]) {
-        std::cout << a.shape_ << " " << b.shape_ << std::endl;
+        std::cout << shape_ << " " << other.shape_ << std::endl;
         throw std::invalid_argument("Invalid shape for matmul.");
     }
     Shape aOuterShape(aShape);
@@ -376,12 +329,12 @@ Tensor<U> matmul(const Tensor<U>& a, const Tensor<U>& b) {
     rShape.push_back(aShape[-2]); rShape.push_back(bShape[-1]);
     aOuterStrides.push_back(aStrides[-2]); aOuterStrides.push_back(aStrides[-1]);
     bOuterStrides.push_back(bStrides[-2]); bOuterStrides.push_back(bStrides[-1]);
-    Tensor<U> res(rShape, a.data_->backend_type());
+    Tensor<U> res(rShape, data_->backend_type());
     res.data_->matmul(rShape, res.strides_, res.offset_,
-                      a.data_.get(), aOuterStrides, a.offset_,
-                      b.data_.get(), bOuterStrides, b.offset_,
+                      data_.get(), aOuterStrides, offset_,
+                      other.data_.get(), bOuterStrides, other.offset_,
                       aShape[-1]);
-    if (b.shape_.size() == 1)
+    if (other.shape_.size() == 1)
         return res.squeeze({-1});
     else
         return res;
@@ -496,16 +449,6 @@ Tensor<U> Tensor<U>::T() const {
 }
 
 /* ===== Info ===== */
-
-template <typename U>
-size_t Tensor<U>::numel() const {
-    return shape_.numel();
-}
-
-template <typename U>
-const Shape& Tensor<U>::shape() const {
-    return shape_;
-}
 
 template <typename U>
 backend::BackendType Tensor<U>::backend_type() const {
@@ -812,67 +755,6 @@ Tensor<size_t> Tensor<U>::arg_reduce(int axis, backend::ArgRedOp op, bool keepDi
         return res.unsqueeze(axis);
     else
         return res;
-}
-
-// Friend and non-member function definitions
-template <typename U>
-Tensor<U> operator+(U a, const Tensor<U>& b) {
-    return b + a;
-}
-
-template <typename U>
-Tensor<U> operator*(U a, const Tensor<U>& b) {
-    return b * a;
-}
-
-template <typename U>
-Tensor<bool> operator==(U a, const Tensor<U>& b) {
-    return b == a;
-}
-
-template <typename U>
-Tensor<bool> operator>(const Tensor<U>& a, const Tensor<U>& b) {
-    return b < a;
-}
-
-template <typename U>
-Tensor<bool> operator>=(const Tensor<U>& a, const Tensor<U>& b) {
-    return b <= a;
-}
-
-template <typename U>
-Tensor<bool> operator<(U a, const Tensor<U>& b) {
-    return b > a;
-}
-
-template <typename U>
-Tensor<bool> operator>(U a, const Tensor<U>& b) {
-    return b < a;
-}
-
-template <typename U>
-Tensor<bool> operator<=(U a, const Tensor<U>& b) {
-    return b >= a;
-}
-
-template <typename U>
-Tensor<bool> operator>=(U a, const Tensor<U>& b) {
-    return b <= a;
-}
-
-template <typename U>
-Tensor<U> exp(const Tensor<U>& t) {
-    return t.exp();
-}
-
-template <typename U>
-Tensor<U> log(const Tensor<U>& t) {
-    return t.log();
-}
-
-template <typename U>
-Tensor<U> sum(const Tensor<U>& t) {
-    return t.sum();
 }
 
 } // namespace linalg

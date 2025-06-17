@@ -55,24 +55,34 @@ public:
     Tensor at(Args&&... args) const;
 
     /* ===== Arithmetic ===== */
-    template <typename V>
-    friend Tensor<V> operator+(const Tensor<V>& a, const Tensor<V>& b);
-    template <typename V>
-    friend Tensor<V> operator-(const Tensor<V>& a, const Tensor<V>& b);
-    template <typename V>
-    friend Tensor<V> operator*(const Tensor<V>& a, const Tensor<V>& b);
-    template <typename V>
-    friend Tensor<V> operator/(const Tensor<V>& a, const Tensor<V>& b);
+    friend Tensor operator+(const Tensor& a, const Tensor& b) {
+        return a.apply_binary(b, backend::BinOp::Add);
+    }
+
+    friend Tensor operator-(const Tensor& a, const Tensor& b) {
+        return a.apply_binary(b, backend::BinOp::Sub);
+    }
+
+    friend Tensor operator*(const Tensor& a, const Tensor& b) {
+        return a.apply_binary(b, backend::BinOp::Mul);
+    }
+
+    friend Tensor operator/(const Tensor& a, const Tensor& b) {
+        return a.apply_binary(b, backend::BinOp::Div);
+    }
 
     Tensor operator+(U other) const;
     Tensor operator-(U other) const;
     Tensor operator*(U other) const;
     Tensor operator/(U other) const;
 
-    template <typename V>
-    friend Tensor<V> operator-(V a, const Tensor<V>& b);
-    template <typename V>
-    friend Tensor<V> operator/(V a, const Tensor<V>& b);
+    friend Tensor operator-(U a, const Tensor& b) {
+        return b.apply_binary(a, backend::BinOp::SubBy);
+    }
+
+    friend Tensor operator/(U a, const Tensor& b) {
+        return b.apply_binary(a, backend::BinOp::DivBy);
+    }
 
     Tensor& operator+=(const Tensor& other);
     Tensor& operator-=(const Tensor& other);
@@ -85,12 +95,17 @@ public:
     Tensor& operator/=(U other);
 
     /* ===== Comparison ===== */
-    template <typename V>
-    friend Tensor<bool> operator==(const Tensor<V>& a, const Tensor<V>& b);
-    template <typename V>
-    friend Tensor<bool> operator<(const Tensor<V>& a, const Tensor<V>& b);
-    template <typename V>
-    friend Tensor<bool> operator<=(const Tensor<V>& a, const Tensor<V>& b);
+    friend Tensor<bool> operator==(const Tensor& a, const Tensor& b) {
+        return a.template apply_binary<bool>(b, backend::BinOp::Eq);
+    }
+
+    friend Tensor<bool> operator<(const Tensor& a, const Tensor& b) {
+        return a.template apply_binary<bool>(b, backend::BinOp::Lt);
+    }
+
+    friend Tensor<bool> operator<=(const Tensor& a, const Tensor& b) {
+        return a.template apply_binary<bool>(b, backend::BinOp::Lte);
+    }
 
     Tensor<bool> operator<(U other) const;
     Tensor<bool> operator>(U other) const;
@@ -120,8 +135,7 @@ public:
     Tensor broadcast_reduce_to(const Shape& shape);
 
     /* ===== Linear Algebra ===== */
-    template <typename V>
-    friend Tensor<V> matmul(const Tensor<V>& a, const Tensor<V>& b);
+    Tensor matmul(const Tensor& other) const;
 
     /* ===== Manipulations ===== */
     Tensor reshape(const Shape& newShape) const;
@@ -130,8 +144,8 @@ public:
     Tensor T() const;
 
     /* ===== Info ===== */
-    size_t numel() const;
-    const Shape& shape() const;
+    size_t numel() const { return shape_.numel(); }
+    const Shape& shape() const { return shape_; }
     backend::BackendType backend_type() const;
 
     /* ===== Type / Backend Casting ===== */
@@ -186,34 +200,37 @@ private:
 
 // Non-member operator and utility function declarations
 template <typename U>
-Tensor<U> operator+(U a, const Tensor<U>& b);
+Tensor<U> operator+(U a, const Tensor<U>& b) { return b + a; }
 template <typename U>
-Tensor<U> operator*(U a, const Tensor<U>& b);
+Tensor<U> operator*(U a, const Tensor<U>& b) { return b * a; }
 
 template <typename U>
-Tensor<bool> operator==(U a, const Tensor<U>& b);
+Tensor<bool> operator==(U a, const Tensor<U>& b) { return b == a; }
 template <typename U>
-Tensor<bool> operator>(const Tensor<U>& a, const Tensor<U>& b);
+Tensor<bool> operator>(const Tensor<U>& a, const Tensor<U>& b) { return b < a; }
 template <typename U>
-Tensor<bool> operator>=(const Tensor<U>& a, const Tensor<U>& b);
+Tensor<bool> operator>=(const Tensor<U>& a, const Tensor<U>& b) { return b <= a; }
 template <typename U>
-Tensor<bool> operator<(U a, const Tensor<U>& b);
+Tensor<bool> operator<(U a, const Tensor<U>& b) { return b > a; }
 template <typename U>
-Tensor<bool> operator>(U a, const Tensor<U>& b);
+Tensor<bool> operator>(U a, const Tensor<U>& b) { return b < a; }
 template <typename U>
-Tensor<bool> operator<=(U a, const Tensor<U>& b);
+Tensor<bool> operator<=(U a, const Tensor<U>& b) { return b >= a; }
 template <typename U>
-Tensor<bool> operator>=(U a, const Tensor<U>& b);
+Tensor<bool> operator>=(U a, const Tensor<U>& b) { return b <= a; }
 
 template <typename U>
-Tensor<U> exp(const Tensor<U>& t);
+Tensor<U> exp(const Tensor<U>& t) { return t.exp(); }
 template <typename U>
-Tensor<U> log(const Tensor<U>& t);
+Tensor<U> log(const Tensor<U>& t) { return t.log(); }
 template <typename U>
-Tensor<U> sum(const Tensor<U>& t);
+Tensor<U> sum(const Tensor<U>& t) { return t.sum(); }
+
+template <typename U>
+Tensor<U> matmul(const Tensor<U>& a, const Tensor<U>& b) { return a.matmul(b); }
 
 }
 
-#include "../src/tensor.tpp"
+#include "tensor.tpp"
 
 #endif // TENSOR_H

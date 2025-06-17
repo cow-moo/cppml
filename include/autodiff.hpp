@@ -11,16 +11,12 @@ namespace autodiff {
 using linalg::Tensor;
 using linalg::Shape;
 
-class ComputationGraph {
-public:
+struct ComputationGraph {
+    // Tape is in topological sort order of computation graph DAG assuming graph is
+    // constructed in order on a single thread
     std::vector<std::function<void()>> tape;
 
-    void backward() {
-        for (int i = tape.size() - 1; i >= 0; i--) {
-            tape[i]();
-        }
-        tape.clear();
-    }
+    void backward();
 };
 
 template <typename T = float>
@@ -28,246 +24,55 @@ class Expression {
 public:
     Expression() = default;
 
-    Expression(const Tensor<T>& value, std::string name="unnamed", ComputationGraph* graph=nullptr) : value_(value), name_(name), graph_(graph) {
-        if (graph_) {
-            grad_.emplace(Tensor<T>::zeros(this->value().shape(), value.backend_type()));
-        }
-    }
+    Expression(const Tensor<T>& value, std::string name = "unnamed", ComputationGraph* graph = nullptr);
 
-    Expression(const Tensor<T>& value, ComputationGraph* graph) : Expression(value, "unnamed", graph) {}
+    Expression(const Tensor<T>& value, ComputationGraph* graph);
 
-    Expression(const Expression& other)
-        : value_(other.value_), grad_(other.grad_), name_(other.name_), graph_(other.graph_) {}
+    Expression(const Expression& other);
 
     // Rebinding assignment
-    Expression& operator=(const Expression& other) {
-        if (value_)
-            value_->assign(other.value());
-        else
-            value_ = other.value();
-        grad_.reset();
-        if (other.grad_) {
-            grad_.emplace(*other.grad_);
-        }
-        graph_ = other.graph_;
-        name_ = other.name_;
-        return *this;
-    }
+    Expression& operator=(const Expression& other);
 
-    Tensor<T>& value() {
-        return *value_;
-    }
+    Tensor<T>& value() { return *value_; }
+    const Tensor<T>& value() const { return *value_; }
 
-    const Tensor<T>& value() const {
-        return *value_;
-    }
+    Tensor<T>& grad() { return *grad_; }
+    const Tensor<T>& grad() const { return *grad_; }
 
-    Tensor<T>& grad() {
-        return *grad_;
-    }
+    bool requires_grad() const { return grad_.has_value(); }
 
-    const Tensor<T>& grad() const {
-        return *grad_;
-    }
+    const Shape& shape() const { return value().shape(); }
 
-    bool requires_grad() const {
-        return grad_.has_value();
-    }
-
-    const Shape& shape() const {
-        return value().shape();
-    }
-
-    Expression& rename_(const std::string& name) {
-        name_ = name;
-        return *this;
-    }
+    Expression& rename_(const std::string& name);
 
     // Should only be called on the final loss function
-    void backward() {
-        assert(graph_ != nullptr);
-        assert(grad_->shape().size() == 0);
-
-        (*grad_) += 1;
-        graph_->backward();
-    }
+    void backward();
 
     template <typename... Args>
-    Expression operator[](Args&&... args) const {
-        Expression res(*this);
-        res.value_->assign(value().at(std::forward<Args>(args)...));
-        if (requires_grad())
-            res.grad_->assign(grad().at(std::forward<Args>(args)...));
-        return res;
-    }
+    Expression operator[](Args&&... args) const;
 
     // undefined behavior if a and b come from different computation graphs
-    friend Expression operator+(const Expression& a, const Expression& b) {
-        Expression res(a.value() + b.value(), "+", a.graph_ ? a.graph_ : b.graph_);
+    Expression operator+(const Expression& other) const;
+    Expression operator-(const Expression& other) const;
+    Expression operator*(const Expression& other) const;
+    Expression operator/(const Expression& other) const;
 
-        if (res.graph_) {
-            res.graph_->tape.push_back([grad = *res.grad_, aGrad = a.grad_, bGrad = b.grad_]() mutable {
-                if (aGrad) {
-                    *aGrad += grad.broadcast_reduce_to(aGrad->shape());
-                }
-                if (bGrad) {
-                    *bGrad += grad.broadcast_reduce_to(bGrad->shape());
-                }
-            });
-        }
+    Expression operator-() { return (*this) * -1; }
 
-        return res;
-    }
+    Expression operator*(T other);
+    Expression operator/(T other);
 
-    friend Expression operator-(const Expression& a, const Expression& b) {
-        Expression res(a.value() - b.value(), "-", a.graph_ ? a.graph_ : b.graph_);
+    Expression matmul(const Expression& other) const;
 
-        if (res.graph_) {
-            res.graph_->tape.push_back([grad = *res.grad_, aGrad = a.grad_, bGrad = b.grad_]() mutable {
-                if (aGrad) {
-                    *aGrad += grad.broadcast_reduce_to(aGrad->shape());
-                }
-                if (bGrad) {
-                    *bGrad -= grad.broadcast_reduce_to(bGrad->shape());
-                }
-            });
-        }
+    Expression relu() const;
 
-        return res;
-    }
-
-    // undefined behavior if a and b come from different computation graphs
-    friend Expression operator*(const Expression& a, const Expression& b) {
-        Expression res(a.value() * b.value(), "*", a.graph_ ? a.graph_ : b.graph_);
-
-        if (res.graph_) {
-            res.graph_->tape.push_back([grad = *res.grad_, aGrad = a.grad_, bGrad = b.grad_, aValue = a.value(), bValue = b.value()]() mutable {
-                if (aGrad) {
-                    *aGrad += (grad * bValue).broadcast_reduce_to(aGrad->shape());
-                }
-                if (bGrad) {
-                    *bGrad += (grad * aValue).broadcast_reduce_to(bGrad->shape());
-                }
-            });
-        }
-
-        return res;
-    }
-
-    friend Expression operator/(const Expression& a, const Expression& b) {
-        Expression res(a.value() / b.value(), "/", a.graph_ ? a.graph_ : b.graph_);
-
-        if (res.graph_) {
-            res.graph_->tape.push_back([grad = *res.grad_, aGrad = a.grad_, bGrad = b.grad_, aValue = a.value(), bValue = b.value()]() mutable {
-                if (aGrad) {
-                    *aGrad += (grad / bValue).broadcast_reduce_to(aGrad->shape());
-                }
-                if (bGrad) {
-                    *bGrad += (-grad * aValue / bValue / bValue).broadcast_reduce_to(bGrad->shape());
-                }
-            });
-        }
-
-        return res;
-    }
-
-    Expression operator-() {
-        return (*this) * -1;
-    }
-
-    Expression operator*(T other) {
-        Expression res(value() * other, "*", graph_);
-
-        if (res.graph_) {
-            res.graph_->tape.push_back([resGrad = *res.grad_, grad = *grad_, other]() mutable {
-                grad += resGrad * other;
-            });
-        }
-
-        return res;
-    }
-
-    Expression operator/(T other) {
-        return ((*this) * (1 / other)).rename_("/");
-    }
-
-    friend Expression matmul(const Expression& a, const Expression& b) {
-        Expression res(matmul(a.value(), b.value()), "matmul", a.graph_ ? a.graph_ : b.graph_);
-
-        if (res.graph_) {
-            res.graph_->tape.push_back([grad = *res.grad_, aGrad = a.grad_, bGrad = b.grad_, aValue = a.value(), bValue = b.value()]() mutable {
-                if (aGrad) {
-                    *aGrad += matmul(grad, bValue.T()).broadcast_reduce_to(aGrad->shape());
-                }
-                if (bGrad) {
-                    *bGrad += matmul(aValue.T(), grad).broadcast_reduce_to(bGrad->shape());
-                }
-            });
-        }
-
-        return res;
-    }
-
-    Expression sum() const {
-        Expression res(value().sum(), "sum", graph_);
-
-        if (res.graph_) {
-            res.graph_->tape.push_back([resGrad = *res.grad_, grad = *grad_]() mutable {
-                grad += resGrad;
-            });
-        }
-
-        return res;
-    }
-
-    Expression relu() const {
-        Expression res(value().relu(), "relu", graph_);
-
-        if (res.graph_) {
-            res.graph_->tape.push_back([resGrad = *res.grad_, grad = *grad_, value = this->value()]() mutable {
-                grad += (value > 0.0f).template astype<T>() * resGrad;
-            });
-        }
-
-        return res;
-    }
+    Expression sum() const;
 
     // Softmax on last dimension
-    Expression softmax() const {
-        Expression res(value().softmax(), "softmax", graph_);
+    Expression softmax() const;
+    Expression log_softmax() const;
 
-        if (res.graph_) {
-            res.graph_->tape.push_back([resGrad = *res.grad_, resValue = res.value(), grad = *grad_]() mutable {
-                Tensor<T> scratch = (resGrad * resValue).sum({-1}).unsqueeze(resGrad.shape().size() - 1);
-                grad += resValue * (resGrad - scratch);
-            });
-        }
-
-        return res;
-    }
-
-    Expression log_softmax() const {
-        Expression res(value().log_softmax(), "log_softmax", graph_);
-
-        if (res.graph_) {
-            res.graph_->tape.push_back([resGrad = *res.grad_, resValue = res.value(), grad = *grad_]() mutable {
-                Tensor<T> sumGrad = resGrad.sum({-1}).unsqueeze(resGrad.shape().size() - 1);
-                grad += resGrad - resValue.exp() * sumGrad;
-            });
-        }
-
-        return res;
-    }
-
-    void print() const {
-        std::cout << name_ << std::endl;
-        std::cout << "value ";
-        value().print();
-        if (grad_) {
-            std::cout << "grad  ";
-            grad_->print();
-        }
-    }
+    void print() const;
 
 private:
     std::optional<Tensor<T>> value_;
@@ -277,15 +82,16 @@ private:
 };
 
 template <typename T>
-Expression<T> sum(const Expression<T>& expr) {
-    return expr.sum();
-}
+Expression<T> matmul(const Expression<T>& a, const Expression<T>& b) { return a.matmul(b); }
 
 template <typename T>
-Expression<T> relu(const Expression<T>& expr) {
-    return expr.relu();
-}
+Expression<T> relu(const Expression<T>& expr) { return expr.relu(); }
+
+template <typename T>
+Expression<T> sum(const Expression<T>& expr) { return expr.sum(); }
 
 } // namespace autodiff
+
+#include "autodiff.tpp"
 
 #endif // AUTODIFF_H
