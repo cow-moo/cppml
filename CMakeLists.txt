@@ -6,7 +6,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
-file(GLOB SRC_FILES ${CMAKE_SOURCE_DIR}/src/*.cpp)
+file(GLOB_RECURSE SRC_FILES
+     CONFIGURE_DEPENDS
+     ${CMAKE_SOURCE_DIR}/src/*.cpp)
 add_library(cpp182 STATIC ${SRC_FILES})
 
 file(GLOB TEST_FILES ${CMAKE_SOURCE_DIR}/tests/*.cpp)

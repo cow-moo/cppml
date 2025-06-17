@@ -18,18 +18,6 @@ static ThreadPool& get_pool() {
 static size_t min_chunk_size = 1 << 17; //1 << 17;
 static size_t max_chunks = get_pool().get_num_threads() * 2;
 
-// static size_t get_chunk_size(size_t taskSize) {
-//     if (taskSize < min_chunk_size)
-//         return taskSize;
-//     size_t lChunkSize = std::max(min_chunk_size, taskSize / max_chunks);
-//     assert(lChunkSize <= taskSize);
-//     size_t rChunkSize = taskSize / (taskSize / lChunkSize);
-//     return rChunkSize;
-//     // taskSize = 91
-//     // lChunkSize = 40
-//     // -> rChunkSize = 45
-// }
-
 static inline size_t get_num_chunks(size_t taskSize) {
     // If res < max_chunks, then res * min_chunk_size <= taskSize < (res + 1) * min_chunk_size
     return std::max((size_t)1, std::min(max_chunks, taskSize / min_chunk_size));
