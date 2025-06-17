@@ -24,7 +24,7 @@ public:
             );
         }
         outputLayer = this->template register_module<module::Linear<T>>(
-            "l" + std::to_string(dims.size() - 1), dims[dims.size() - 2], dims[dims.size() - 1]
+            "l" + std::to_string(dims.size() - 2), dims[dims.size() - 2], dims[dims.size() - 1]
         );
     }
 

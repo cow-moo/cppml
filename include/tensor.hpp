@@ -530,8 +530,7 @@ public:
     }
 
     void print() const {
-        std::cout << shape_;
-        std::cout << ", " << data_->backend_type();
+        std::cout << data_->backend_type() << " " << shape_;
         std::cout << ": " << (*this) << std::endl;
     }
 

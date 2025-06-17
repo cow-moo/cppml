@@ -78,6 +78,11 @@ public:
         return value().shape();
     }
 
+    Expression& rename_(const std::string& name) {
+        name_ = name;
+        return *this;
+    }
+
     // Should only be called on the final loss function
     void backward() {
         assert(graph_ != nullptr);
@@ -92,13 +97,13 @@ public:
         Expression res(*this);
         res.value_->assign(value().at(std::forward<Args>(args)...));
         if (requires_grad())
-           res.grad_->assign(grad().at(std::forward<Args>(args)...));
+            res.grad_->assign(grad().at(std::forward<Args>(args)...));
         return res;
     }
 
     // undefined behavior if a and b come from different computation graphs
     friend Expression operator+(const Expression& a, const Expression& b) {
-        Expression res(a.value() + b.value(), "+", a.graph_ == nullptr ? b.graph_ : a.graph_);
+        Expression res(a.value() + b.value(), "+", a.graph_ ? a.graph_ : b.graph_);
 
         if (res.graph_) {
             res.graph_->tape.push_back([grad = *res.grad_, aGrad = a.grad_, bGrad = b.grad_]() mutable {
@@ -115,7 +120,7 @@ public:
     }
 
     friend Expression operator-(const Expression& a, const Expression& b) {
-        Expression res(a.value() - b.value(), "-", a.graph_ == nullptr ? b.graph_ : a.graph_);
+        Expression res(a.value() - b.value(), "-", a.graph_ ? a.graph_ : b.graph_);
 
         if (res.graph_) {
             res.graph_->tape.push_back([grad = *res.grad_, aGrad = a.grad_, bGrad = b.grad_]() mutable {
@@ -133,7 +138,7 @@ public:
 
     // undefined behavior if a and b come from different computation graphs
     friend Expression operator*(const Expression& a, const Expression& b) {
-        Expression res(a.value() * b.value(), "*", a.graph_ == nullptr ? b.graph_ : a.graph_);
+        Expression res(a.value() * b.value(), "*", a.graph_ ? a.graph_ : b.graph_);
 
         if (res.graph_) {
             res.graph_->tape.push_back([grad = *res.grad_, aGrad = a.grad_, bGrad = b.grad_, aValue = a.value(), bValue = b.value()]() mutable {
@@ -150,7 +155,7 @@ public:
     }
 
     friend Expression operator/(const Expression& a, const Expression& b) {
-        Expression res(a.value() / b.value(), "/", a.graph_ == nullptr ? b.graph_ : a.graph_);
+        Expression res(a.value() / b.value(), "/", a.graph_ ? a.graph_ : b.graph_);
 
         if (res.graph_) {
             res.graph_->tape.push_back([grad = *res.grad_, aGrad = a.grad_, bGrad = b.grad_, aValue = a.value(), bValue = b.value()]() mutable {
@@ -183,11 +188,11 @@ public:
     }
 
     Expression operator/(T other) {
-        return (*this) * (1 / other);
+        return ((*this) * (1 / other)).rename_("/");
     }
 
     friend Expression matmul(const Expression& a, const Expression& b) {
-        Expression res(matmul(a.value(), b.value()), "matmul", a.graph_ == nullptr ? b.graph_ : a.graph_);
+        Expression res(matmul(a.value(), b.value()), "matmul", a.graph_ ? a.graph_ : b.graph_);
 
         if (res.graph_) {
             res.graph_->tape.push_back([grad = *res.grad_, aGrad = a.grad_, bGrad = b.grad_, aValue = a.value(), bValue = b.value()]() mutable {

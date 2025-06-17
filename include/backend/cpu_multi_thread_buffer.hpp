@@ -30,7 +30,7 @@ static size_t max_chunks = get_pool().get_num_threads() * 2;
 //     // -> rChunkSize = 45
 // }
 
-static size_t get_num_chunks(size_t taskSize) {
+static inline size_t get_num_chunks(size_t taskSize) {
     // If res < max_chunks, then res * min_chunk_size <= taskSize < (res + 1) * min_chunk_size
     return std::max((size_t)1, std::min(max_chunks, taskSize / min_chunk_size));
 }
@@ -286,9 +286,9 @@ public:
                 const Shape& reduceShape, T identity, BinOp op) override {
         assert(other->backend_type() == BackendType::CpuMultiThread);
 
-        size_t numChunks_ = 0;
-        size_t chunkSize_ = 0;
-        size_t plus_ = 0;
+        // size_t numChunks_ = 0;
+        // size_t chunkSize_ = 0;
+        // size_t plus_ = 0;
 
         auto fn = cpu_utils::binop_table<T, T, T>[static_cast<size_t>(op)];
         auto& pool = get_pool();
@@ -315,9 +315,9 @@ public:
             // Total threads <= max_chunks
             assert(intermediate.size() <= max_chunks);
 
-            numChunks_ = intermediate.size();
-            chunkSize_ = base;
-            plus_ = remainder == 0 ? 0 : 1;
+            // numChunks_ = intermediate.size();
+            // chunkSize_ = base;
+            // plus_ = remainder == 0 ? 0 : 1;
 
             //std::cout << "intermediate " << intermediate.size() << std::endl;
 
@@ -349,9 +349,9 @@ public:
             size_t base = rShape.numel() / numChunks;
             size_t remainder = rShape.numel() % numChunks;
 
-            numChunks_ = numChunks;
-            chunkSize_ = base * reduceDim;
-            plus_ = remainder == 0 ? 0 : reduceDim;
+            // numChunks_ = numChunks;
+            // chunkSize_ = base * reduceDim;
+            // plus_ = remainder == 0 ? 0 : reduceDim;
 
             for (size_t i = 0; i < numChunks; i++) {
                 size_t chunkSize = base + (i < remainder);
@@ -399,9 +399,9 @@ public:
         size_t base = rNumel / numChunks;
         size_t remainder = rNumel % numChunks;
 
-        size_t numChunks_ = numChunks;
-        size_t chunkSize_ = base * reduceDim;
-        size_t plus_ = remainder == 0 ? 0 : reduceDim;
+        // size_t numChunks_ = numChunks;
+        // size_t chunkSize_ = base * reduceDim;
+        // size_t plus_ = remainder == 0 ? 0 : reduceDim;
         
         //std::cout << numChunks_ << " x (" << chunkSize_ << " + " << plus_ << ")" << std::endl;
 
@@ -461,9 +461,9 @@ public:
         size_t base = rNumel / numChunks;
         size_t remainder = rNumel / numChunks;
 
-        size_t numChunks_ = numChunks;
-        size_t chunkSize_ = base * innerDim;
-        size_t plus_ = remainder == 0 ? 0 : innerDim;
+        // size_t numChunks_ = numChunks;
+        // size_t chunkSize_ = base * innerDim;
+        // size_t plus_ = remainder == 0 ? 0 : innerDim;
 
         //std::cout << numChunks_ << " x (" << chunkSize_ << " + " << plus_ << ")" << std::endl;
 

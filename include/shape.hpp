@@ -78,6 +78,7 @@ struct Strides {
     }
 
     size_t size() const { return dims.size(); }
+    bool empty() const { return dims.empty(); }
 
     friend std::ostream& operator<<(std::ostream& os, const Strides& t) {
         os << "(";
@@ -160,6 +161,7 @@ struct Shape {
     }
 
     size_t size() const { return dims.size(); }
+    bool empty() const { return dims.empty(); }
 
     size_t numel() const {
         size_t res = 1;

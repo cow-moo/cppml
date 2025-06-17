@@ -49,4 +49,13 @@ std::pair<Tensor<float>, uint8_t> MNISTDataset::get(size_t index) const {
     return {images[index], labels[index]};
 }
 
+void MNISTDataset::print_img(const Tensor<float>& img) {
+    for (int i = 0; i < 28; i++) {
+        for (int j = 0; j < 28; j++) {
+            std::cout << (img[i * 28 + j] < 0.5f ? '.' : '@') << ' ';
+        }
+        std::cout << std::endl;
+    }
+}
+
 }

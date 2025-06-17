@@ -86,6 +86,8 @@ struct MNISTDataset {
     bool load_images(const std::string& path);
     bool load_labels(const std::string& path);
     std::pair<Tensor<float>, uint8_t> get(size_t index) const;
+    
+    static void print_img(const Tensor<float>& img);
 };
 
 }
