@@ -3,6 +3,7 @@
 namespace autodiff {
 
 void ComputationGraph::backward() {
+    //std::cout << "Tape size: " << tape.size() << std::endl;
     for (int i = tape.size() - 1; i >= 0; i--) {
         tape[i]();
     }

@@ -54,6 +54,8 @@ public:
         return m;
     }
 
+    const std::string& name() const { return name_; }
+
 private:
     std::vector<Expression<T>> weights_;
     std::vector<std::shared_ptr<Module<T>>> submodules_;

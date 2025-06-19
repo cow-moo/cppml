@@ -1,12 +1,12 @@
 #include <iostream>
-#include "tensor.hpp"
+#include "linalg.hpp"
 #include "autodiff.hpp"
 #include "module.hpp"
 #include "solver.hpp"
 #include "dataloader.hpp"
 #include "loss.hpp"
 #include "backend.hpp"
-#include "scoped_timer.hpp"
+#include "timing.hpp"
 
 using linalg::Tensor;
 using linalg::Range;

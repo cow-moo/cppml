@@ -1,10 +1,11 @@
 #include <iostream>
 #include "dataloader.hpp"
-#include "tensor.hpp"
+#include "linalg.hpp"
 #include "autodiff.hpp"
 #include "module.hpp"
 #include "solver.hpp"
 #include "loss.hpp"
+#include "timing.hpp"
 
 using linalg::Tensor;
 using linalg::Shape;
@@ -25,7 +26,7 @@ int main() {
         y.back()[label] = 1.0f;
     }
 
-    dataloader::DataLoader<float> dl(train.images, y, 64);
+    dataloader::DataLoader<float> dl(train.images, y, 256);
 
     dataloader::MNISTDataset test;
     assert(test.load_images("../datasets/mnist/t10k-images-idx3-ubyte/t10k-images-idx3-ubyte"));
@@ -46,27 +47,47 @@ int main() {
 
     std::cout << "Ready" << std::endl;
 
-    Tensor<size_t> yPred = model(xTest).value().argmax();
-    int correct = (yPred == yTest).astype<int>().sum();
-    std::cout << "Test accuracy: " << correct << " / " << test.images.size() << " = " << ((float)correct / test.images.size()) << std::endl;
+    // Tensor<size_t> yPred = model(xTest).value().argmax();
+    // int correct = (yPred == yTest).astype<int>().sum();
+    // std::cout << "Test accuracy: " << correct << " / " << test.images.size() << " = " << ((float)correct / test.images.size()) << std::endl;
 
-    for (int epoch = 0; epoch < 10; epoch++) {
-        float totalLoss = 0.0f;
-        int cnt = 0;
+    for (int epoch = 0; epoch < 1; epoch++) {
+        // float totalLoss = 0.0f;
+        // int cnt = 0;
         for (auto&& [x, y] : dl) {
-            auto logits = model(x);
-            auto loss = loss::cross_entropy_logits(logits, y);
-            totalLoss += loss.value();
-            cnt++;
-            loss.backward();
-            gd.step();
-            gd.zero_grad();
-            dl.shuffle();
+            Expression<float> logits, loss;
+            {
+                timing::ScopedProfiler timer("Forward");
+                logits = model(x);
+            }
+            {
+                timing::ScopedProfiler timer("Loss");
+                loss = loss::cross_entropy_logits(logits, y);
+                // totalLoss += loss.value();
+                // cnt++;
+            }
+            {
+                timing::ScopedProfiler timer("Backward");
+                loss.backward();
+            }
+            {
+                timing::ScopedProfiler timer("Step");
+                gd.step();
+                gd.zero_grad();
+            }
+            {
+                timing::ScopedProfiler timer("Shuffle");
+                dl.shuffle();
+            }
         }
-        std::cout << "Average epoch training loss: " << totalLoss / cnt << std::endl;
+        //std::cout << "Average epoch training loss: " << totalLoss / cnt << std::endl;
 
-        Tensor<size_t> yPred = model(xTest).value().argmax();
-        int correct = (yPred == yTest).astype<int>().sum();
-        std::cout << "Test accuracy: " << correct << " / " << test.images.size() << " = " << ((float)correct / test.images.size()) << std::endl;
+        //Tensor<size_t> yPred = model(xTest).value().argmax();
+        //int correct = (yPred == yTest).astype<int>().sum();
+        //std::cout << "Test accuracy: " << correct << " / " << test.images.size() << " = " << ((float)correct / test.images.size()) << std::endl;
+
+        timing::Profiler::report(false);
+        timing::Profiler::report(true);
+        timing::Profiler::reset();
     }
 }

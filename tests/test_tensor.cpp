@@ -1,4 +1,4 @@
-#include "tensor.hpp"
+#include "linalg.hpp"
 #include <iostream>
 #include <cassert>
 

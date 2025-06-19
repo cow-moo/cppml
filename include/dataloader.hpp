@@ -3,7 +3,7 @@
 
 #include <vector>
 #include <numeric>
-#include "tensor.hpp"
+#include "linalg.hpp"
 
 namespace dataloader {
 

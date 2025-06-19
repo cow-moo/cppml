@@ -2,6 +2,7 @@
 #include <iostream>
 
 ThreadPool::ThreadPool(size_t numThreads) : stop_(false), tasksInProgress_(0) {
+    // std::cout << "NumThreads: " << numThreads << std::endl;
     for (size_t i = 0; i < numThreads; ++i) {
         workers_.emplace_back([this]() {
             while (true) {

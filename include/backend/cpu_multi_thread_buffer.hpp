@@ -84,10 +84,10 @@ public:
         size_t cur = 0;
         for (size_t i = 0; i < numChunks; i++) {
             size_t chunkSize = base + (i < remainder);
-            pool.enqueue([=] {
+            pool.enqueue([=, data = data_] {
                 std::copy(it + cur,
                           it + cur + chunkSize,
-                          data_ + cur);
+                          data + cur);
             });
             cur += chunkSize;
         }
@@ -108,9 +108,9 @@ public:
         size_t cur = 0;
         for (size_t i = 0; i < numChunks; i++) {
             size_t chunkSize = base + (i < remainder);
-            pool.enqueue([=] {
-                std::copy(data_ + cur,
-                          data_ + cur + chunkSize,
+            pool.enqueue([=, data = data_] {
+                std::copy(data + cur,
+                          data + cur + chunkSize,
                           it + cur);
             });
             cur += chunkSize;
@@ -296,7 +296,7 @@ public:
         if (intermediateDim >= 2) {
             size_t base = reduceDim / intermediateDim;
             size_t remainder = reduceDim % intermediateDim;
-            std::vector<T> intermediate(rShape.numel() * intermediateDim, identity);
+            std::vector<T> intermediate(rShape.numel() * intermediateDim);
 
             // Chunk size >= min_chunk_size
             assert (base >= min_chunk_size);
@@ -313,10 +313,12 @@ public:
                 for (size_t j = 0; j < intermediateDim; j++) {
                     size_t chunkSize = base + (j < remainder);
                     pool.enqueue([=, &intermediate] mutable {
+                        T local = identity;
                         for (size_t k = 0; k < chunkSize; k++) {
-                            intermediate[i * intermediateDim + j] = fn(intermediate[i * intermediateDim + j], *otherIt);
+                            local = fn(local, *otherIt);
                             ++otherIt;
                         }
+                        intermediate[i * intermediateDim + j] = local;
                     });
                     otherIt += chunkSize;
                 }
@@ -359,7 +361,7 @@ public:
             pool.wait();
         }
 
-        //std::cout << numChunks_ << " x (" << chunkSize_ << " + " << plus_ << ")" << std::endl;
+        // std::cout << numChunks_ << " x (" << chunkSize_ << " + " << plus_ << ")" << std::endl;
     }
 
 

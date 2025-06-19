@@ -1,6 +1,5 @@
 #include "dataloader.hpp"
 #include <fstream>
-#include "shape.hpp"
 
 namespace dataloader {
 

@@ -3,6 +3,7 @@
 
 #include "base.hpp"
 #include "autodiff.hpp"
+#include "timing.hpp"
 
 using linalg::Tensor;
 using autodiff::Expression;
@@ -31,8 +32,10 @@ public:
     Expression<T> forward(const Expression<T>& input) override {
         Expression<T> res = input;
         for (auto &layer : hiddenLayers) {
+            timing::ScopedProfiler timer(layer->name());
             res = layer->forward(res);
         }
+        timing::ScopedProfiler timer(outputLayer->name());
         return outputLayer->forward(res);
     }
 

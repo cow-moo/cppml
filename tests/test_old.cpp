@@ -2,8 +2,7 @@
 #include <iostream>
 #include <cmath>
 #include "autodiff.hpp"
-#include "tensor.hpp"
-#include "shape.hpp"
+#include "linalg.hpp"
 
 using linalg::Tensor;
 using linalg::Range;

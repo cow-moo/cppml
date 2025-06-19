@@ -1,6 +1,6 @@
 #include <iostream>
 #include "dataloader.hpp"
-#include "tensor.hpp"
+#include "linalg.hpp"
 #include "autodiff.hpp"
 #include "module.hpp"
 #include "solver.hpp"

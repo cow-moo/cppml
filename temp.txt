@@ -1,0 +1,64 @@
+Singlethreading
+=== Profiling Results ===
+Shuffle: 1564.63 ms
+Step: 2302.79 ms
+Backward: 8520.4 ms
+mlp/l0: 7088.63 ms
+mlp/l2: 40.4921 ms
+Loss: 51.4016 ms
+Forward: 7738.28 ms
+mlp/l1: 608.217 ms
+
+=== Profiling Results ===
+Shuffle: 1.66983 ms
+Step: 2.45762 ms
+Backward: 9.09327 ms
+mlp/l0: 7.56524 ms
+mlp/l2: 0.0432147 ms
+Loss: 0.0548576 ms
+Forward: 8.25857 ms
+mlp/l1: 0.649111 ms
+
+Multithreading
+=== Profiling Results ===
+Shuffle: 1570.47 ms
+Step: 2747.48 ms
+Backward: 7400.24 ms
+mlp/l0: 3025.53 ms
+mlp/l2: 130.771 ms
+Loss: 329.273 ms
+Forward: 3736.39 ms
+mlp/l1: 578.636 ms
+
+=== Profiling Results ===
+Shuffle: 1.67606 ms
+Step: 2.93221 ms
+Backward: 7.8978 ms
+mlp/l0: 3.22896 ms
+mlp/l2: 0.139564 ms
+Loss: 0.351412 ms
+Forward: 3.98761 ms
+mlp/l1: 0.617541 ms
+
+
+================= 256 ==================
+single 
+=== Profiling Results ===
+Shuffle: 443.195 ms
+Step: 580.504 ms
+Backward: 9068.59 ms
+mlp/l0: 7086.98 ms
+mlp/l2: 38.0701 ms
+Loss: 45.3028 ms
+Forward: 7732.17 ms
+mlp/l1: 606.584 ms
+
+=== Profiling Results ===
+Shuffle: 1.894 ms
+Step: 2.48079 ms
+Backward: 38.7547 ms
+mlp/l0: 30.2862 ms
+mlp/l2: 0.162693 ms
+Loss: 0.193602 ms
+Forward: 33.0435 ms
+mlp/l1: 2.59224 ms

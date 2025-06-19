@@ -3,8 +3,7 @@
 
 #include <vector>
 #include <functional>
-#include "tensor.hpp"
-#include "shape.hpp"
+#include "linalg.hpp"
 
 namespace autodiff {
 
