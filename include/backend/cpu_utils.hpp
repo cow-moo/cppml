@@ -22,9 +22,16 @@ static constexpr BinOpFn<T, U, V> binop_table[] = {
     [](U x, V y) -> T { return static_cast<T>(x > y); },          // BinOp::Gt
     [](U x, V y) -> T { return static_cast<T>(x >= y); },         // BinOp::Gte
     [](U, V y)   -> T { return static_cast<T>(y); },              // BinOp::Pass
-    [](U x, V y) -> T { return static_cast<T>(std::max(x, y)); }, // BinOp::Max
-    [](U x, V y) -> T { return static_cast<T>(std::min(x, y)); }, // BinOp::Min
+    [](U x, V y) -> T { return static_cast<T>(x > y ? x : y); },  // BinOp::Max
+    [](U x, V y) -> T { return static_cast<T>(x < y ? x : y); },  // BinOp::Min
 };
+
+template <typename Functor>
+auto specialize_lambda(BinOp op) {
+    switch (static_cast<size_t>(op)) {
+        case 0: return lambda<binop_table<T, U, V>>
+    }
+}
 
 template <typename T, typename U>
 using UnOpFn = T(*)(U);

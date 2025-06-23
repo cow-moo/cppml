@@ -56,6 +56,7 @@ int main() {
         // int cnt = 0;
         for (auto&& [x, y] : dl) {
             Expression<float> logits, loss;
+            timing::Profiler::reset();
             {
                 timing::ScopedProfiler timer("Forward");
                 logits = model(x);
@@ -80,14 +81,12 @@ int main() {
                 dl.shuffle();
             }
         }
-        //std::cout << "Average epoch training loss: " << totalLoss / cnt << std::endl;
-
-        //Tensor<size_t> yPred = model(xTest).value().argmax();
-        //int correct = (yPred == yTest).astype<int>().sum();
-        //std::cout << "Test accuracy: " << correct << " / " << test.images.size() << " = " << ((float)correct / test.images.size()) << std::endl;
-
         timing::Profiler::report(false);
         timing::Profiler::report(true);
-        timing::Profiler::reset();
+        //std::cout << "Average epoch training loss: " << totalLoss / cnt << std::endl;
+
+        Tensor<size_t> yPred = model(xTest).value().argmax();
+        int correct = (yPred == yTest).astype<int>().sum();
+        std::cout << "Test accuracy: " << correct << " / " << test.images.size() << " = " << ((float)correct / test.images.size()) << std::endl;
     }
 }

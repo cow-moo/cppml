@@ -7,6 +7,12 @@
 
 namespace backend {
 
+/* 
+TODO:
+- replace fn function pointers with templates for inlining
+
+*/
+
 static ThreadPool& get_pool() {
     static ThreadPool pool;
     return pool;
@@ -186,14 +192,28 @@ public:
         size_t base = numel / numChunks;
         size_t remainder = numel % numChunks;
 
-        for (size_t i = 0; i < numChunks; i++) {
-            size_t chunkSize = base + (i < remainder);
-            pool.enqueue([=] mutable {
-                for (size_t j = 0; j < chunkSize; j++) {
-                    *rIt = fn(*aIt, *bIt);
+        auto lambda = [](size_t chunkSize, auto rIt, auto aIt, auto bIt) {
+            return []<typename Fn>() {
+                for (size_t i = 0; i < chunkSize; i++) {
+                    *rIt = Fn(*aIt, *bIt);
                     ++rIt; ++aIt; ++bIt;
                 }
+            };
+        };
+
+        for (size_t i = 0; i < numChunks; i++) {
+            size_t chunkSize = base + (i < remainder);
+            pool.enqueue([=] {
+                switch (static_cast<size_t>(op)) {
+                    case 0: 
+                }
             });
+            // pool.enqueue([=] mutable {
+            //     for (size_t j = 0; j < chunkSize; j++) {
+            //         *rIt = fn(*aIt, *bIt);
+            //         ++rIt; ++aIt; ++bIt;
+            //     }
+            // });
             rIt += chunkSize;
             aIt += chunkSize;
             bIt += chunkSize;

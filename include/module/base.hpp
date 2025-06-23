@@ -41,7 +41,7 @@ public:
 
     Expression<T> register_weight(std::string name, const Tensor<T>& val) {
         assert(graph_);
-        weights_.push_back(Expression(val, name_ + "/" + name, graph_.get()));
+        weights_.emplace_back(val, name_ + "/" + name, graph_.get());
         return weights_.back();
     }
 

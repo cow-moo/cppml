@@ -1,7 +1,7 @@
 #include "backend/thread_pool.hpp"
 #include <iostream>
 
-ThreadPool::ThreadPool(size_t numThreads) : stop_(false), tasksInProgress_(0) {
+ThreadPool::ThreadPool(size_t numThreads) : stop_(false), tasksInProgress_(numThreads) {
     // std::cout << "NumThreads: " << numThreads << std::endl;
     for (size_t i = 0; i < numThreads; ++i) {
         workers_.emplace_back([this]() {
@@ -9,6 +9,9 @@ ThreadPool::ThreadPool(size_t numThreads) : stop_(false), tasksInProgress_(0) {
                 std::function<void()> task;
                 {
                     std::unique_lock lock(mutex_);
+                    --tasksInProgress_;
+                    if (tasksInProgress_ == 0)
+                        cvDone_.notify_all();
                     cvTask_.wait(lock, [this]() {
                         return stop_ || !tasks_.empty();
                     });
@@ -21,11 +24,6 @@ ThreadPool::ThreadPool(size_t numThreads) : stop_(false), tasksInProgress_(0) {
                 }
 
                 task();
-                {
-                    std::lock_guard lock(mutex_);
-                    --tasksInProgress_;
-                }
-                cvDone_.notify_all();
             }
         });
     }
