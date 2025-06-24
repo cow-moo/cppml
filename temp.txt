@@ -62,3 +62,34 @@ mlp/l2: 0.162693 ms
 Loss: 0.193602 ms
 Forward: 33.0435 ms
 mlp/l1: 2.59224 ms
+
+
+
+
+
+
+
+
+new
+=== Profiling Results ===
+Shuffle: 261.858 ms
+Step: 2283.74 ms
+Backward: 10485.2 ms
+mlp/l0: 4767.93 ms
+mlp/l2: 187.283 ms
+Loss: 161.142 ms
+Forward: 5796.01 ms
+mlp/l1: 840.107 ms
+Test accuracy: 9158 / 10000 = 0.9158
+
+old
+=== Profiling Results ===
+Shuffle: 266.004 ms
+Step: 2431.19 ms
+Backward: 10705.9 ms
+mlp/l0: 4887.79 ms
+mlp/l2: 190.197 ms
+Loss: 165.261 ms
+Forward: 5959.33 ms
+mlp/l1: 880.547 ms
+Test accuracy: 9141 / 10000 = 0.9141

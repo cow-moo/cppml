@@ -54,9 +54,9 @@ int main() {
     for (int epoch = 0; epoch < 1; epoch++) {
         // float totalLoss = 0.0f;
         // int cnt = 0;
+        timing::Profiler::reset();
         for (auto&& [x, y] : dl) {
             Expression<float> logits, loss;
-            timing::Profiler::reset();
             {
                 timing::ScopedProfiler timer("Forward");
                 logits = model(x);
@@ -82,7 +82,7 @@ int main() {
             }
         }
         timing::Profiler::report(false);
-        timing::Profiler::report(true);
+        //timing::Profiler::report(true);
         //std::cout << "Average epoch training loss: " << totalLoss / cnt << std::endl;
 
         Tensor<size_t> yPred = model(xTest).value().argmax();

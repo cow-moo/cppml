@@ -25,6 +25,7 @@ foreach(exp_file ${EXP_FILES})
     add_executable(${exp_name} ${exp_file})
     target_link_libraries(${exp_name} lib)
     target_compile_options(${exp_name} PRIVATE -Wall -Wextra -O2)
+    # target_compile_options(${exp_name} PRIVATE -Wall -Wextra -O3 -Rpass=inline -Rpass-missed=inline)
 endforeach()
 
 add_executable(main main.cpp)

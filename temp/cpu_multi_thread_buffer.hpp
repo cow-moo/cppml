@@ -183,6 +183,7 @@ public:
         auto bIt = cpu_utils::StridedIterator<V>(static_cast<CpuMultiThreadBuffer<U>*>(b)->data_, 
                                       shape, bStrides, bOffset);
         
+        auto fn = cpu_utils::binop_table<T, U, V>[static_cast<size_t>(op)];
         size_t numel = shape.numel();
 
         auto& pool = get_pool();
@@ -191,30 +192,13 @@ public:
         size_t base = numel / numChunks;
         size_t remainder = numel % numChunks;
 
-        using Kernel = void(*)(size_t, 
-                           cpu_utils::StridedIterator<T>, 
-                           cpu_utils::StridedIterator<U>, 
-                           cpu_utils::StridedIterator<V>);
-        static constexpr auto lambda = []<size_t Idx>() -> Kernel {
-            return [](size_t chunkSize, 
-                      cpu_utils::StridedIterator<T> rIt,
-                      cpu_utils::StridedIterator<U> aIt,
-                      cpu_utils::StridedIterator<V> bIt) {
-                constexpr auto fn = cpu_utils::binop_table<T, U, V>[Idx];
-                for (size_t i = 0; i < chunkSize; ++i) {
+        for (size_t i = 0; i < numChunks; i++) {
+            size_t chunkSize = base + (i < remainder);
+            pool.enqueue([=] mutable {
+                for (size_t i = 0; i < chunkSize; i++) {
                     *rIt = fn(*aIt, *bIt);
                     ++rIt; ++aIt; ++bIt;
                 }
-            };
-        };
-        static constexpr auto table = cpu_utils::make_kernel_table_binop<T, U, V>(lambda);
-
-        auto kernel = table[static_cast<size_t>(op)];
-
-        for (size_t i = 0; i < numChunks; ++i) {
-            size_t chunkSize = base + (i < remainder);
-            pool.enqueue([=] {
-                kernel(chunkSize, rIt, aIt, bIt);
             });
             rIt += chunkSize;
             aIt += chunkSize;
@@ -234,6 +218,7 @@ public:
         auto aIt = cpu_utils::StridedIterator<U>(static_cast<CpuMultiThreadBuffer<U>*>(a)->data_, 
                                       shape, aStrides, aOffset);
         
+        auto fn = cpu_utils::binop_table<T, U, V>[static_cast<size_t>(op)];
         size_t numel = shape.numel();
 
         auto& pool = get_pool();
@@ -242,30 +227,13 @@ public:
         size_t base = numel / numChunks;
         size_t remainder = numel % numChunks;
 
-        using Kernel = void(*)(size_t, 
-                           cpu_utils::StridedIterator<T>, 
-                           cpu_utils::StridedIterator<U>, 
-                           V);
-        static constexpr auto lambda = []<size_t Idx>() -> Kernel {
-            return [](size_t chunkSize, 
-                      cpu_utils::StridedIterator<T> rIt,
-                      cpu_utils::StridedIterator<U> aIt,
-                      V b) {
-                constexpr auto fn = cpu_utils::binop_table<T, U, V>[Idx];
-                for (size_t i = 0; i < chunkSize; ++i) {
+        for (size_t i = 0; i < numChunks; i++) {
+            size_t chunkSize = base + (i < remainder);
+            pool.enqueue([=] mutable {
+                for (size_t j = 0; j < chunkSize; j++) {
                     *rIt = fn(*aIt, b);
                     ++rIt; ++aIt;
                 }
-            };
-        };
-        static constexpr auto table = cpu_utils::make_kernel_table_binop<T, U, V>(lambda);
-
-        auto kernel = table[static_cast<size_t>(op)];
-
-        for (size_t i = 0; i < numChunks; ++i) {
-            size_t chunkSize = base + (i < remainder);
-            pool.enqueue([=] {
-                kernel(chunkSize, rIt, aIt, b);
             });
             rIt += chunkSize;
             aIt += chunkSize;
@@ -283,6 +251,7 @@ public:
                                           shape, otherStrides, otherOffset);
         auto rIt = cpu_utils::StridedIterator<T>(data_, shape, rStrides, rOffset);
         
+        auto fn = cpu_utils::unop_table<T, U>[static_cast<size_t>(op)];
         size_t numel = shape.numel();
 
         auto& pool = get_pool();
@@ -291,28 +260,13 @@ public:
         size_t base = numel / numChunks;
         size_t remainder = numel % numChunks;
 
-        using Kernel = void(*)(size_t, 
-                           cpu_utils::StridedIterator<T>, 
-                           cpu_utils::StridedIterator<U>);
-        static constexpr auto lambda = []<size_t Idx>() -> Kernel {
-            return [](size_t chunkSize, 
-                      cpu_utils::StridedIterator<T> rIt,
-                      cpu_utils::StridedIterator<U> otherIt) {
-                constexpr auto fn = cpu_utils::unop_table<T, U>[Idx];
-                for (size_t i = 0; i < chunkSize; ++i) {
+        for (size_t i = 0; i < numChunks; i++) {
+            size_t chunkSize = base + (i < remainder);
+            pool.enqueue([=] mutable {
+                for (size_t j = 0; j < chunkSize; j++) {
                     *rIt = fn(*otherIt);
                     ++rIt; ++otherIt;
                 }
-            };
-        };
-        static constexpr auto table = cpu_utils::make_kernel_table_unop<T, U>(lambda);
-
-        auto kernel = table[static_cast<size_t>(op)];
-
-        for (size_t i = 0; i < numChunks; ++i) {
-            size_t chunkSize = base + (i < remainder);
-            pool.enqueue([=] {
-                kernel(chunkSize, rIt, otherIt);
             });
             rIt += chunkSize;
             otherIt += chunkSize;
@@ -323,7 +277,7 @@ public:
 
     void reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
                 const DeviceBuffer<T>* other, const Strides& otherStrides, size_t otherOffset,
-                const Shape& reduceShape, [[maybe_unused]] T identity, BinOp op) override {
+                const Shape& reduceShape, T identity, BinOp op) override {
         assert(other->backend_type() == BackendType::CpuMultiThread);
 
         // size_t numChunks_ = 0;
@@ -361,28 +315,16 @@ public:
 
             //std::cout << "intermediate " << intermediate.size() << std::endl;
 
-            using Kernel = T(*)(size_t, cpu_utils::StridedIterator<T>); 
-            static constexpr auto lambda = []<size_t Idx>() -> Kernel {
-                return [](size_t chunkSize, cpu_utils::StridedIterator<T> otherIt) {
-                    constexpr auto fn = cpu_utils::binop_table<T, T, T>[Idx];
-                    T local = *otherIt;
-                    ++otherIt;
-                    for (size_t i = 1; i < chunkSize; ++i) {
-                        local = fn(local, *otherIt);
-                        ++otherIt;
-                    }
-                    return local;
-                };
-            };
-            static constexpr auto table = cpu_utils::make_kernel_table_binop<T, T, T>(lambda);
-
-            auto kernel = table[static_cast<size_t>(op)];
-
             for (size_t i = 0; i < rShape.numel(); i++) {
                 for (size_t j = 0; j < intermediateDim; j++) {
                     size_t chunkSize = base + (j < remainder);
-                    pool.enqueue([=, &intermediate] {
-                        intermediate[i * intermediateDim + j] = kernel(chunkSize, otherIt);
+                    pool.enqueue([=, &intermediate] mutable {
+                        T local = identity;
+                        for (size_t k = 0; k < chunkSize; k++) {
+                            local = fn(local, *otherIt);
+                            ++otherIt;
+                        }
+                        intermediate[i * intermediateDim + j] = local;
                     });
                     otherIt += chunkSize;
                 }
@@ -390,8 +332,8 @@ public:
             pool.wait();
 
             for (size_t i = 0; i < rShape.numel(); i++) {
-                *rIt = intermediate[i * intermediateDim];
-                for (size_t j = 1; j < intermediateDim; j++) {
+                *rIt = identity;
+                for (size_t j = 0; j < intermediateDim; j++) {
                     *rIt = fn(*rIt, intermediate[i * intermediateDim + j]);
                 }
                 ++rIt;
@@ -407,36 +349,17 @@ public:
             // chunkSize_ = base * reduceDim;
             // plus_ = remainder == 0 ? 0 : reduceDim;
 
-            using Kernel = void(*)(size_t, 
-                                   size_t,
-                                   cpu_utils::StridedIterator<T>,
-                                   cpu_utils::StridedIterator<T>); 
-            static constexpr auto lambda = []<size_t Idx>() -> Kernel {
-                return [](size_t chunkSize,
-                          size_t reduceDim,
-                          cpu_utils::StridedIterator<T> rIt,
-                          cpu_utils::StridedIterator<T> otherIt) {
-                    constexpr auto fn = cpu_utils::binop_table<T, T, T>[Idx];
-                    for (size_t j = 0; j < chunkSize; j++) {
-                        T local = *otherIt;
-                        ++otherIt;
-                        for (size_t k = 1; k < reduceDim; k++) {
-                            local = fn(local, *otherIt);
-                            ++otherIt;
-                        }
-                        *rIt = local;
-                        ++rIt;
-                    }
-                };
-            };
-            static constexpr auto table = cpu_utils::make_kernel_table_binop<T, T, T>(lambda);
-
-            auto kernel = table[static_cast<size_t>(op)];
-
             for (size_t i = 0; i < numChunks; i++) {
                 size_t chunkSize = base + (i < remainder);
-                pool.enqueue([=]() {
-                    kernel(chunkSize, reduceDim, rIt, otherIt);
+                pool.enqueue([=] mutable {
+                    for (size_t j = 0; j < chunkSize; j++) {
+                        *rIt = identity;
+                        for (size_t k = 0; k < reduceDim; k++) {
+                            *rIt = fn(*rIt, *otherIt);
+                            ++otherIt;
+                        }
+                        ++rIt;
+                    }
                 });
                 rIt += chunkSize;
                 otherIt += chunkSize * reduceDim;

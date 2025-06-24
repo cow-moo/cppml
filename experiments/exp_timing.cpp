@@ -11,6 +11,21 @@
 using linalg::Tensor;
 using linalg::Range;
 
+void time_apply_binary() {
+    backend::BackendGuard guard(backend::BackendType::CpuMultiThread);
+    Tensor<> t = Tensor<>::normal({100000000});
+    //Tensor<> single = t.to(backend::BackendType::CpuSingleThread);
+    //single.assign(single * single);
+    timing::Profiler::reset();
+    for (size_t i = 0; i < 10; i++) {
+        timing::ScopedProfiler timer("time");
+        t * t;
+        //Tensor<> res = t * t;
+        //(res.to(backend::BackendType::CpuSingleThread) == single).astype<size_t>().sum().print();
+    }
+    timing::Profiler::report(true);
+}
+
 void time_reduction() {
     std::vector<Tensor<>> multi;
     for (size_t x : {100, 10000, 1000000, 100000000}) {
@@ -58,11 +73,12 @@ void time_matmul() {
 }
 
 int main() {
+    time_apply_binary();
     std::cout << "Reduction" << std::endl;
     time_reduction();
 
-    std::cout << "\nMatmul" << std::endl;
-    time_matmul();
+    // std::cout << "\nMatmul" << std::endl;
+    // time_matmul();
 
     return 0;
 }
