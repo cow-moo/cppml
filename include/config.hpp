@@ -2,11 +2,11 @@
 #define CONFIG_H
 
 #include <cstddef>
-#include "backend/base.hpp"
+#include "backend/backend_type.hpp"
 
 namespace config {
 
-constexpr size_t MAX_SBO_DIMS = 6;
+constexpr size_t MAX_DIMS = 6;
 constexpr backend::BackendType DEFAULT_BACKEND = backend::BackendType::CpuSingleThread;
 
 }

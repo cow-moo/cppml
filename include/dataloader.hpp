@@ -49,9 +49,9 @@ public:
         assert(x.size() == y.size());
         std::iota(permutation_.begin(), permutation_.end(), 0);
 
-        std::vector<size_t> xShape = x[0].shape();
+        Shape xShape = x[0].shape();
         xShape.insert(xShape.begin(), batchSize);
-        std::vector<size_t> yShape = y[0].shape();
+        Shape yShape = y[0].shape();
         yShape.insert(yShape.begin(), batchSize);
         batchShapes_ = {xShape, yShape};
     }

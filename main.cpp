@@ -15,7 +15,12 @@ using autodiff::Expression;
 using autodiff::ComputationGraph;
 
 int main() {
-    std::cout << "main" << std::endl;
+    //std::cout << "main" << std::endl;
+    Tensor<> t = Tensor<>::normal({10});
+    std::cout << t.shape() << std::endl;
+    std::cout << t.numel() << std::endl;
+    std::cout << t.shape().numel() << std::endl;
+    //t.print();
     return 0;
 }
 

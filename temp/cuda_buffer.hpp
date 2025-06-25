@@ -9,30 +9,13 @@ using linalg::Shape;
 using linalg::Strides;
 
 template <typename T>
-class CpuSingleThreadBuffer final : public DeviceBuffer<T> {
+class CudaBuffer final : public DeviceBuffer<T> {
 public:
-    static CpuSingleThreadBuffer* create(size_t size) {
-        size_t total = sizeof(CpuSingleThreadBuffer) + alignof(T) + sizeof(T) * size;
-        void* mem = ::operator new(total);
-        auto* buffer = new (mem) CpuSingleThreadBuffer(size);
-
-        void* raw = reinterpret_cast<char*>(buffer) + sizeof(CpuSingleThreadBuffer);
-        size_t space = total - sizeof(CpuSingleThreadBuffer);
-        void* aligned = std::align(alignof(T), sizeof(T) * size, raw, space);
-        buffer->data_ = reinterpret_cast<T*>(aligned);
-        assert(reinterpret_cast<uintptr_t>(buffer->data_) % alignof(T) == 0);
-        return buffer;
+    CudaBuffer(size_t size) {
+        
     }
 
-    static void operator delete(void* p) {
-        ::operator delete(p);
-    }
-
-    static void operator delete(void* p, std::size_t) {
-        ::operator delete(p);
-    }
-
-    ~CpuSingleThreadBuffer() override = default;
+    ~CudaBuffer() override = default;
 
     void write_flat(const std::vector<T>& values) override {
         assert(values.size() == size_);

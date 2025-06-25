@@ -4,81 +4,94 @@
 #include <vector>
 #include <memory>
 #include <sstream>
+#include "config.hpp"
 
 namespace linalg {
 
-// TODO: reimplement with SBO
+class Strides {
+public:
+    Strides() : size_(0) {};
+    Strides(const std::vector<size_t>& init) : size_(init.size()) {
+        std::copy(init.begin(), init.end(), dims_.begin());
+    }
 
-struct Strides {
-    std::vector<size_t> dims;
+    Strides(const std::initializer_list<size_t>& init) : size_(init.size()) {
+        std::copy(init.begin(), init.end(), dims_.begin());
+    }
 
-    Strides() = default;
-    Strides(std::vector<size_t> d) : dims(std::move(d)) {}
-    Strides(std::initializer_list<size_t> init) : dims(init) {}
+    using iterator = typename std::array<size_t, config::MAX_DIMS>::iterator;
 
-    operator std::vector<size_t>&() { return dims; }
-    operator const std::vector<size_t>&() const { return dims; }
+    auto front() const { return dims_.front(); }
+    auto back() const { return dims_[size_ - 1]; }
 
-    // Forward vector methods
-    auto front() const { return dims.front(); }
-    auto back() const { return dims.back(); }
-
-    auto begin() { return dims.begin(); }
-    auto end() { return dims.end(); }
-    auto begin() const { return dims.begin(); }
-    auto end() const { return dims.end(); }
+    auto begin() { return dims_.begin(); }
+    auto end() { return dims_.begin() + size_; }
+    auto begin() const { return dims_.begin(); }
+    auto end() const { return dims_.begin() + size_; }
 
     void push_back(size_t val) {
-        dims.push_back(val);
+        assert(size_ < config::MAX_DIMS);
+        dims_[size_] = val;
+        ++size_;
     }
 
-    void pop_back() { dims.pop_back(); }
+    void pop_back() { --size_; }
 
-    auto insert(typename std::vector<size_t>::iterator pos, size_t val) {
-        return dims.insert(pos, val);
+    auto insert(iterator pos, size_t val) {
+        assert(size_ < config::MAX_DIMS);
+        size_t idx = pos - dims_.begin();
+        for (size_t i = size_; i > idx; --i)
+            dims_[i] = dims_[i - 1];
+        dims_[idx] = val;
+        ++size_;
+        return pos;
     }
 
-    auto erase(typename std::vector<size_t>::iterator pos) {
-        return dims.erase(pos);
-    }
-
-    auto erase(typename std::vector<size_t>::iterator first, typename std::vector<size_t>::iterator last) {
-        return dims.erase(first, last);
+    auto erase(iterator pos) {
+        assert(size_ > 0);
+        size_t idx = pos - dims_.begin();
+        for (size_t i = idx; i < size_ - 1; ++i) {
+            dims_[i] = dims_[i + 1];
+        }
+        --size_;
+        return pos;
     }
 
     bool operator==(const Strides& other) const {
-        return dims == other.dims;
+        if (size_ != other.size_)
+            return false;
+        for (size_t i = 0; i < size_; ++i) {
+            if (dims_[i] != other.dims_[i])
+                return false;
+        }
+        return true;
     }
 
     bool operator!=(const Strides& other) const {
         return !(*this == other);
     }
 
-    auto data() const {
-        return dims.data();
-    }
-
-    size_t& operator[](size_t i) { return dims[i]; }
-    const size_t& operator[](size_t i) const { return dims[i]; }
+    size_t& operator[](size_t i) { return dims_[i]; }
+    const size_t& operator[](size_t i) const { return dims_[i]; }
 
     size_t& operator[](int i) {
-        if (i < 0) i += dims.size();
-        if (i < 0 || i >= (int)dims.size()) {
+        if (i < 0) i += size_;
+        if (i < 0 || i >= (int)size_) {
             throw std::invalid_argument("Axis index out of bounds.");
         }
-        return dims[i];
+        return dims_[i];
     }
 
     const size_t& operator[](int i) const {
-        if (i < 0) i += dims.size();
-        if (i < 0 || i >= (int)dims.size()) {
+        if (i < 0) i += size_;
+        if (i < 0 || i >= (int)size_) {
             throw std::invalid_argument("Axis index out of bounds.");
         }
-        return dims[i];
+        return dims_[i];
     }
 
-    size_t size() const { return dims.size(); }
-    bool empty() const { return dims.empty(); }
+    size_t size() const { return size_; }
+    bool empty() const { return size_ == 0; }
 
     friend std::ostream& operator<<(std::ostream& os, const Strides& t) {
         os << "(";
@@ -90,84 +103,102 @@ struct Strides {
         os << ")";
         return os;
     }
+
+private:
+    std::array<size_t, config::MAX_DIMS> dims_;
+    size_t size_;
 };
 
-struct Shape {
-    std::vector<size_t> dims;
+class Shape {
+public:
+    Shape() : size_(0) {};
+    Shape(const std::vector<size_t>& init) : size_(init.size()) {
+        std::copy(init.begin(), init.end(), dims_.begin());
+    }
 
-    Shape() = default;
-    Shape(std::vector<size_t> d) : dims(std::move(d)) {}
-    Shape(std::initializer_list<size_t> init) : dims(init) {}
+    Shape(const std::initializer_list<size_t>& init) : size_(init.size()) {
+        std::copy(init.begin(), init.end(), dims_.begin());
+    }
 
-    operator std::vector<size_t>&() { return dims; }
-    operator const std::vector<size_t>&() const { return dims; }
-
+    using iterator = typename std::array<size_t, config::MAX_DIMS>::iterator;
+    
     // Forward vector methods
-    auto front() const { return dims.front(); }
-    auto back() const { return dims.back(); }
+    auto front() const { return dims_.front(); }
+    auto back() const { return dims_[size_ - 1]; }
 
-    auto begin() { return dims.begin(); }
-    auto end() { return dims.end(); }
-    auto begin() const { return dims.begin(); }
-    auto end() const { return dims.end(); }
+    auto begin() { return dims_.begin(); }
+    auto end() { return dims_.begin() + size_; }
+    auto begin() const { return dims_.begin(); }
+    auto end() const { return dims_.begin() + size_; }
 
     void push_back(size_t val) {
-        dims.push_back(val);
+        assert(size_ < config::MAX_DIMS);
+        dims_[size_] = val;
+        ++size_;
     }
 
-    void pop_back() { dims.pop_back(); }
+    void pop_back() { --size_; }
 
-    auto insert(typename std::vector<size_t>::iterator pos, size_t val) {
-        return dims.insert(pos, val);
+    auto insert(iterator pos, size_t val) {
+        assert(size_ < config::MAX_DIMS);
+        size_t idx = pos - dims_.begin();
+        for (size_t i = size_; i > idx; --i)
+            dims_[i] = dims_[i - 1];
+        dims_[idx] = val;
+        ++size_;
+        return pos;
     }
 
-    auto erase(typename std::vector<size_t>::iterator pos) {
-        return dims.erase(pos);
-    }
-
-    auto erase(typename std::vector<size_t>::iterator first, typename std::vector<size_t>::iterator last) {
-        return dims.erase(first, last);
+    auto erase(iterator pos) {
+        assert(size_ > 0);
+        size_t idx = pos - dims_.begin();
+        for (size_t i = idx; i < size_ - 1; ++i) {
+            dims_[i] = dims_[i + 1];
+        }
+        --size_;
+        return pos;
     }
 
     bool operator==(const Shape& other) const {
-        return dims == other.dims;
+        if (size_ != other.size_)
+            return false;
+        for (size_t i = 0; i < size_; ++i) {
+            if (dims_[i] != other.dims_[i])
+                return false;
+        }
+        return true;
     }
 
     bool operator!=(const Shape& other) const {
         return !(*this == other);
     }
 
-    auto data() const {
-        return dims.data();
-    }
-
-    size_t& operator[](size_t i) { return dims[i]; }
-    const size_t& operator[](size_t i) const { return dims[i]; }
+    size_t& operator[](size_t i) { return dims_[i]; }
+    const size_t& operator[](size_t i) const { return dims_[i]; }
 
     size_t& operator[](int i) {
-        if (i < 0) i += dims.size();
-        if (i < 0 || i >= (int)dims.size()) {
+        if (i < 0) i += size_;
+        if (i < 0 || i >= (int)size_) {
             throw std::invalid_argument("Axis index out of bounds.");
         }
-        return dims[i];
+        return dims_[i];
     }
 
     const size_t& operator[](int i) const {
-        if (i < 0) i += dims.size();
-        if (i < 0 || i >= (int)dims.size()) {
+        if (i < 0) i += size_;
+        if (i < 0 || i >= (int)size_) {
             throw std::invalid_argument("Axis index out of bounds.");
         }
-        return dims[i];
+        return dims_[i];
     }
 
-    size_t size() const { return dims.size(); }
-    bool empty() const { return dims.empty(); }
+    size_t size() const { return size_; }
+    bool empty() const { return size_ == 0; }
 
     size_t numel() const {
         size_t res = 1;
-        for (auto x : dims) {
-            res *= x;
-        }
+        for (size_t i = 0; i < size_; ++i)
+            res *= dims_[i];
         return res;
     }
 
@@ -250,6 +281,10 @@ struct Shape {
         os << ")";
         return os;
     }
+
+private:
+    std::array<size_t, config::MAX_DIMS> dims_;
+    size_t size_;
 };
 
 }

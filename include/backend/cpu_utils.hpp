@@ -70,7 +70,7 @@ struct StridedIterator {
     U* data;
     Shape shape;
     Strides strides;
-    std::array<size_t, config::MAX_SBO_DIMS> idxs;
+    std::array<size_t, config::MAX_DIMS> idxs;
     size_t dataIdx;
     size_t flatIdx;
 

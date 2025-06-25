@@ -2,16 +2,13 @@
 #define BACKEND_BASE_H
 
 #include <functional>
+#include "backend/backend_type.hpp"
+#include "linalg/shape.hpp"
 
 namespace backend {
 
 using linalg::Shape;
 using linalg::Strides;
-
-enum class BackendType {
-    CpuSingleThread,
-    CpuMultiThread,
-};
 
 enum class BinOp {
     Add,   // a + b
@@ -41,14 +38,6 @@ enum class ArgRedOp {
     Max,
     Min,
 };
-
-inline std::ostream& operator<<(std::ostream& os, BackendType type) {
-    switch (type) {
-        case BackendType::CpuSingleThread: return os << "CpuSingleThread";
-        case BackendType::CpuMultiThread: return os << "CpuMultiThread";
-        default: return os << "Unknown";
-    }
-}
 
 template <typename T> class SharedBuffer;
 template <typename T> class CpuSingleThreadBuffer;

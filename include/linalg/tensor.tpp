@@ -26,7 +26,7 @@ Tensor<U>::Tensor(const Shape& shape, backend::BackendType type)
         strides_.push_back(totalSize);
         totalSize *= shape[i];
     }
-    reverse(strides_.begin(), strides_.end());
+    std::reverse(strides_.begin(), strides_.end());
 }
 
 template <typename U>
