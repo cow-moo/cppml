@@ -2,6 +2,7 @@
 #define BACKEND_CPU_SINGLE_THREAD_BUFFER_H
 
 #include "backend/base.hpp"
+#include <cuda_runtime.h>
 
 namespace backend {
 
@@ -11,8 +12,8 @@ using linalg::Strides;
 template <typename T>
 class CudaBuffer final : public DeviceBuffer<T> {
 public:
-    CudaBuffer(size_t size) {
-        
+    CudaBuffer(size_t size) : data_(cudaMalloc) {
+
     }
 
     ~CudaBuffer() override = default;

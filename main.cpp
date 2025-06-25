@@ -7,6 +7,7 @@
 #include "loss.hpp"
 #include "backend.hpp"
 #include "timing.hpp"
+#include <cuda_runtime.h>
 
 using linalg::Tensor;
 using linalg::Range;
@@ -15,12 +16,15 @@ using autodiff::Expression;
 using autodiff::ComputationGraph;
 
 int main() {
-    //std::cout << "main" << std::endl;
-    Tensor<> t = Tensor<>::normal({10});
-    std::cout << t.shape() << std::endl;
-    std::cout << t.numel() << std::endl;
-    std::cout << t.shape().numel() << std::endl;
-    //t.print();
+    float* t;
+    cudaMalloc(&t, 10 * sizeof(float));
+    float buf[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    cudaMemcpy(t, buf, 10 * sizeof(float), cudaMemcpyHostToDevice);
+    float buf2[10];
+    cudaMemcpy(buf2, t, 10 * sizeof(float), cudaMemcpyDeviceToHost);
+    for (size_t i = 0; i < 10; ++i)
+        std::cout << buf2[i] << std::endl;
+    cudaFree(t);
     return 0;
 }
 

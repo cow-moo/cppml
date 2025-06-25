@@ -1,15 +1,28 @@
 cmake_minimum_required(VERSION 3.10)
-project(MyProject)
+project(MyProject LANGUAGES CXX CUDA)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
+#include_directories(/usr/local/cuda/include)
+find_package(CUDAToolkit REQUIRED)
+
 
 file(GLOB_RECURSE SRC_FILES
      CONFIGURE_DEPENDS
-     ${CMAKE_SOURCE_DIR}/src/*.cpp)
+     ${CMAKE_SOURCE_DIR}/src/*.cpp
+     ${CMAKE_SOURCE_DIR}/src/*.cu)
+
 add_library(lib STATIC ${SRC_FILES})
+
+#target_link_libraries(lib cudart cuda)
+target_link_libraries(lib CUDA::cudart)
+
+set_target_properties(lib PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+    POSITION_INDEPENDENT_CODE ON
+)
 
 file(GLOB TEST_FILES ${CMAKE_SOURCE_DIR}/tests/*.cpp)
 foreach(test_file ${TEST_FILES})
