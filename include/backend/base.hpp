@@ -42,6 +42,7 @@ enum class ArgRedOp {
 template <typename T> class SharedBuffer;
 template <typename T> class CpuSingleThreadBuffer;
 template <typename T> class CpuMultiThreadBuffer;
+template <typename T> class CudaBuffer;
 
 #define BACKEND_DISPATCH(...) \
     switch (type_) { \
@@ -50,6 +51,9 @@ template <typename T> class CpuMultiThreadBuffer;
             break; \
         case BackendType::CpuMultiThread: \
             static_cast<CpuMultiThreadBuffer<T>*>(this)->template __VA_ARGS__; \
+            break; \
+        case BackendType::Cuda: \
+            static_cast<CudaBuffer<T>*>(this)->template __VA_ARGS__; \
             break; \
     }
 
@@ -64,8 +68,9 @@ public:
     virtual std::vector<T> read_flat() const = 0;
     virtual std::vector<T> read_strided(const Shape&, const Strides&, size_t) const = 0;
 
-    virtual T& at(size_t i) = 0;
-    virtual const T& at(size_t i) const = 0;
+    virtual T read_at(size_t) const = 0;
+    //virtual T& at(size_t i) = 0;
+    //virtual const T& at(size_t i) const = 0;
 
     // Fake virtual function due to template
     template <typename U, typename V>

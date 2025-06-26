@@ -4,6 +4,8 @@
 #include <vector>
 #include <memory>
 #include <sstream>
+#include <cassert>
+#include <iostream>
 #include "config.hpp"
 
 namespace linalg {
@@ -20,6 +22,9 @@ public:
     }
 
     using iterator = typename std::array<size_t, config::MAX_DIMS>::iterator;
+
+    size_t* data() { return dims_.data(); }
+    const size_t* data() const { return dims_.data(); }
 
     auto front() const { return dims_.front(); }
     auto back() const { return dims_[size_ - 1]; }
@@ -122,7 +127,9 @@ public:
 
     using iterator = typename std::array<size_t, config::MAX_DIMS>::iterator;
     
-    // Forward vector methods
+    size_t* data() { return dims_.data(); }
+    const size_t* data() const { return dims_.data(); }
+
     auto front() const { return dims_.front(); }
     auto back() const { return dims_[size_ - 1]; }
 

@@ -475,7 +475,7 @@ Tensor<U>::operator U() const {
     if (shape_.size() > 0) {
         throw std::invalid_argument("Can't cast tensor to scalar.");
     }
-    return data_->at(offset_);
+    return data_->read_at(offset_);
 }
 
 /* ===== Debug ===== */

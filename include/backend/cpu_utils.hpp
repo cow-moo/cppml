@@ -1,6 +1,8 @@
 #ifndef BACKEND_CPU_UTIL_H
 #define BACKEND_CPU_UTIL_H
 
+#include <array>
+
 namespace backend {
 
 namespace cpu_utils {

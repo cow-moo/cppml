@@ -1,31 +1,36 @@
 #include <iostream>
 #include "linalg.hpp"
-#include "autodiff.hpp"
-#include "module.hpp"
-#include "solver.hpp"
-#include "dataloader.hpp"
-#include "loss.hpp"
+//#include "autodiff.hpp"
+//#include "module.hpp"
+//#include "solver.hpp"
+//#include "dataloader.hpp"
+//#include "loss.hpp"
 #include "backend.hpp"
 #include "timing.hpp"
-#include <cuda_runtime.h>
+#include "backend/cuda_buffer.hpp"
+// #include <cuda_runtime.h>
 
 using linalg::Tensor;
 using linalg::Range;
 using linalg::Shape;
-using autodiff::Expression;
-using autodiff::ComputationGraph;
+// using autodiff::Expression;
+// using autodiff::ComputationGraph;
 
 int main() {
-    float* t;
-    cudaMalloc(&t, 10 * sizeof(float));
-    float buf[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    cudaMemcpy(t, buf, 10 * sizeof(float), cudaMemcpyHostToDevice);
-    float buf2[10];
-    cudaMemcpy(buf2, t, 10 * sizeof(float), cudaMemcpyDeviceToHost);
-    for (size_t i = 0; i < 10; ++i)
-        std::cout << buf2[i] << std::endl;
-    cudaFree(t);
-    return 0;
+    // float* t;
+    // cudaMalloc(&t, 10 * sizeof(float));
+    // float buf[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    // cudaMemcpy(t, buf, 10 * sizeof(float), cudaMemcpyHostToDevice);
+    // float buf2[10];
+    // cudaMemcpy(buf2, t, 10 * sizeof(float), cudaMemcpyDeviceToHost);
+    // for (size_t i = 0; i < 10; ++i)
+    //     std::cout << buf2[i] << std::endl;
+    // cudaFree(t);
+    // return 0;
+
+    Tensor<> t({1, 2, 3}, backend::BackendType::Cuda);
+    t.print();
+    std::cout << (float)t[0] << std::endl;
 }
 
 /*

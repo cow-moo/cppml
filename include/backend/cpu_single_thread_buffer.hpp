@@ -56,15 +56,20 @@ public:
         return res;
     }
 
-    T& at(size_t i) override {
-        if (i >= size_) throw std::out_of_range("CpuSingleThreadBuffer::at");
-        return data_[i];
+    T read_at(size_t offset) const override {
+        if (offset >= size_) throw std::out_of_range("CpuSingleThreadBuffer::read_at");
+        return data_[offset];
     }
 
-    const T& at(size_t i) const override {
-        if (i >= size_) throw std::out_of_range("CpuSingleThreadBuffer::at");
-        return data_[i];
-    }
+    // T& at(size_t i) override {
+    //     if (i >= size_) throw std::out_of_range("CpuSingleThreadBuffer::at");
+    //     return data_[i];
+    // }
+
+    // const T& at(size_t i) const override {
+    //     if (i >= size_) throw std::out_of_range("CpuSingleThreadBuffer::at");
+    //     return data_[i];
+    // }
 
     template <typename U, typename V>
     void apply_binary(const Shape& shape, const Strides& rStrides, size_t rOffset,
@@ -212,8 +217,6 @@ public:
             ++bIt;
         }
     }
-
-    CpuSingleThreadBuffer& operator*() { return *this; }
 
     T& operator[](size_t i) {
         return data_[i];

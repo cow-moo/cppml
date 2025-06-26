@@ -4,6 +4,7 @@
 #include "backend/base.hpp"
 #include "backend/cpu_single_thread_buffer.hpp"
 #include "backend/cpu_multi_thread_buffer.hpp"
+#include "backend/cuda_buffer.hpp"
 
 namespace backend {
 
@@ -19,6 +20,9 @@ public:
                 break;
             case BackendType::CpuMultiThread:
                 buffer_ = CpuMultiThreadBuffer<T>::create(size);
+                break;
+            case BackendType::Cuda:
+                buffer_ = new CudaBuffer<T>(size);
                 break;
         }
     }
