@@ -10,13 +10,6 @@ namespace cpu_utils {
 template <typename T, typename U, typename V>
 using BinOpFn = T(*)(U, V);
 
-template <typename KernelGen, size_t... Is>
-constexpr auto make_kernel_table_impl(KernelGen gen, std::index_sequence<Is...>) {
-    return std::array{
-        gen.template operator()<Is>()...
-    };
-}
-
 template <typename T, typename U, typename V>
 static constexpr BinOpFn<T, U, V> binop_table[14] = {
     [](U x, V y) -> T { return static_cast<T>(x + y); },          // BinOp::Add
@@ -35,12 +28,6 @@ static constexpr BinOpFn<T, U, V> binop_table[14] = {
     [](U x, V y) -> T { return static_cast<T>(x < y ? x : y); },  // BinOp::Min
 };
 
-template <typename T, typename U, typename V, typename KernelGen>
-constexpr auto make_kernel_table_binop(KernelGen gen) {
-    constexpr size_t N = sizeof(binop_table<T, U, V>) / sizeof(BinOpFn<T, U, V>);
-    return make_kernel_table_impl(gen, std::make_index_sequence<N>{});
-}
-
 template <typename T, typename U>
 using UnOpFn = T(*)(U);
 
@@ -51,12 +38,6 @@ static constexpr UnOpFn<T, U> unop_table[4] = {
     [](U x) { return static_cast<T>(-x); },
     [](U x) { return static_cast<T>(x); },
 };
-
-template <typename T, typename U, typename KernelGen>
-constexpr auto make_kernel_table_unop(KernelGen gen) {
-    constexpr size_t N = sizeof(unop_table<T, U>) / sizeof(UnOpFn<T, U>);
-    return make_kernel_table_impl(gen, std::make_index_sequence<N>{});
-}
 
 template <typename U>
 using ArgRedOpFn = void(*)(std::pair<U, size_t>&, std::pair<U, size_t>);

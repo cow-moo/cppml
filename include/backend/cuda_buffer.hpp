@@ -27,31 +27,30 @@ public:
 
     //const T& at(size_t i) const override;
 
-    template <typename U, typename V>
+    template <BinOp Op, typename U, typename V>
     void apply_binary(const Shape& shape, const Strides& rStrides, size_t rOffset,
                       DeviceBuffer<U>* a, const Strides& aStrides, size_t aOffset,
-                      DeviceBuffer<V>* b, const Strides& bStrides, size_t bOffset,
-                      BinOp op);
+                      DeviceBuffer<V>* b, const Strides& bStrides, size_t bOffset);
 
-    template <typename U, typename V>
+    template <BinOp Op, typename U, typename V>
     void apply_binary(const Shape& shape, const Strides& rStrides, size_t rOffset,
                       DeviceBuffer<U>* a, const Strides& aStrides, size_t aOffset,
-                      V b, BinOp op);
+                      V b);
 
-    template <typename U>
+    template <UnOp Op, typename U>
     void apply_unary(const Shape& shape, const Strides& rStrides, size_t rOffset,
-                     DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset,
-                     UnOp op);
+                     DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset);
 
+    template <BinOp Op>
     void reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
                 const DeviceBuffer<T>* other, const Strides& otherStrides, size_t otherOffset,
-                const Shape& reduceShape, T identity, BinOp op);
+                const Shape& reduceShape, T identity);
 
     // Reduce on last dimension
-    template <typename U>
+    template <ArgRedOp Op, typename U>
     void arg_reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
                     const DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset,
-                    size_t reduceDim, ArgRedOp op);
+                    size_t reduceDim);
 
     void matmul(const Shape& rShape, const Strides& rStrides, size_t rOffset,
                 const DeviceBuffer<T>* a, const Strides& aStrides, size_t aOffset,

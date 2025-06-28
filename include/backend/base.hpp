@@ -49,14 +49,13 @@ template <typename T> class CudaBuffer;
         case BackendType::CpuSingleThread: \
             static_cast<CpuSingleThreadBuffer<T>*>(this)->template __VA_ARGS__; \
             break; \
+        case BackendType::CpuMultiThread: \
+            static_cast<CpuMultiThreadBuffer<T>*>(this)->template __VA_ARGS__; \
+            break; \
+        case BackendType::Cuda: \
+            static_cast<CudaBuffer<T>*>(this)->template __VA_ARGS__; \
+            break; \
     }
-    //     case BackendType::CpuMultiThread: \
-    //         static_cast<CpuMultiThreadBuffer<T>*>(this)->template __VA_ARGS__; \
-    //         break; \
-    //     case BackendType::Cuda: \
-    //         static_cast<CudaBuffer<T>*>(this)->template __VA_ARGS__; \
-    //         break; \
-    // }
 
 template <typename T>
 class DeviceBuffer {
