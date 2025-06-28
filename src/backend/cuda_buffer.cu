@@ -61,10 +61,32 @@ void CudaBuffer<T>::write_flat(const std::vector<T>& values) {
     cudaMemcpy(data_, values.data(), size_ * sizeof(float), cudaMemcpyHostToDevice);
 }
 
+// Vector bools perform bit packing so we must specialize
+template <>
+void CudaBuffer<bool>::write_flat(const std::vector<bool>& values) {
+    std::vector<uint8_t> raw(values.size());
+    for (size_t i = 0; i < values.size(); ++i)
+        raw[i] = static_cast<uint8_t>(values[i]);
+    cudaMemcpy(data_, raw.data(), size_ * sizeof(uint8_t), cudaMemcpyHostToDevice);
+}
+
 template <typename T>
 std::vector<T> CudaBuffer<T>::read_flat() const {
     std::vector<T> res(size_);
     cudaMemcpy(res.data(), data_, size_ * sizeof(float), cudaMemcpyDeviceToHost);
+    return res;
+}
+
+// Vector bools perform bit packing so we must specialize
+template <>
+std::vector<bool> CudaBuffer<bool>::read_flat() const {
+    std::vector<uint8_t> raw(size_);
+    cudaMemcpy(raw.data(), data_, size_ * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+    
+    std::vector<bool> res(size_);
+    for (size_t i = 0; i < size_; ++i) {
+        res[i] = static_cast<bool>(raw[i]);
+    }
     return res;
 }
 
@@ -78,7 +100,7 @@ __global__ void read_strided_kernel(T* dst, const T* src) {
 }
 
 template <typename T>
-std::vector<T> CudaBuffer<T>::read_strided(const Shape& shape, const Strides& strides, size_t offset) const {
+static std::vector<T> read_strided_helper(const Shape& shape, const Strides& strides, size_t offset, T* data) {
     size_t ndim = shape.size();
     size_t numel = shape.numel();
     std::vector<T> res(numel);
@@ -93,10 +115,24 @@ std::vector<T> CudaBuffer<T>::read_strided(const Shape& shape, const Strides& st
     cudaMemcpyToSymbol(R_NUMEL, &numel, sizeof(size_t));
 
     int blocks = (numel + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
-    read_strided_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(strided, data_);
+    read_strided_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(strided, data);
     cudaMemcpy(res.data(), strided, numel * sizeof(T), cudaMemcpyDeviceToHost);
     cudaFree(strided);
+    return res;
+}
 
+template <typename T>
+std::vector<T> CudaBuffer<T>::read_strided(const Shape& shape, const Strides& strides, size_t offset) const {
+    return read_strided_helper(shape, strides, offset, data_);
+}
+
+// Vector bools perform bit packing so we must specialize
+template <>
+std::vector<bool> CudaBuffer<bool>::read_strided(const Shape& shape, const Strides& strides, size_t offset) const {
+    std::vector<uint8_t> raw = read_strided_helper<uint8_t>(shape, strides, offset, reinterpret_cast<uint8_t*>(data_));
+    std::vector<bool> res(size_);
+    for (size_t i = 0; i < size_; ++i)
+        res[i] = static_cast<bool>(raw[i]);
     return res;
 }
 
@@ -185,5 +221,52 @@ void CudaBuffer<T>::matmul(
 }
 
 template class CudaBuffer<float>;
+template class CudaBuffer<unsigned long>;
+template class CudaBuffer<bool>;
+template class CudaBuffer<int>;
+template class CudaBuffer<uint8_t>;
+
+#define INSTANTIATE_APPLY_BINARY(T, U, V) \
+template void CudaBuffer<T>::apply_binary<U, V>( \
+    const Shape&, const Strides&, size_t, \
+    DeviceBuffer<U>*, const Strides&, size_t, \
+    DeviceBuffer<V>*, const Strides&, size_t, \
+    BinOp); \
+template void CudaBuffer<T>::apply_binary<U, V>( \
+    const Shape&, const Strides&, size_t, \
+    DeviceBuffer<U>*, const Strides&, size_t, \
+    V, BinOp);
+
+INSTANTIATE_APPLY_BINARY(float, float, float)
+INSTANTIATE_APPLY_BINARY(unsigned long, unsigned long, unsigned long)
+INSTANTIATE_APPLY_BINARY(int, int, int)
+
+INSTANTIATE_APPLY_BINARY(bool, float, float)
+INSTANTIATE_APPLY_BINARY(bool, unsigned long, unsigned long)
+INSTANTIATE_APPLY_BINARY(bool, int, int)
+
+#define INSTANTIATE_APPLY_UNARY(T, U) \
+template void CudaBuffer<T>::apply_unary<U>( \
+    const Shape&, const Strides&, size_t, \
+    DeviceBuffer<U>*, const Strides&, size_t, \
+    UnOp);
+
+INSTANTIATE_APPLY_UNARY(float, float)
+
+INSTANTIATE_APPLY_UNARY(float, bool)
+INSTANTIATE_APPLY_UNARY(unsigned long, bool)
+INSTANTIATE_APPLY_UNARY(int, bool)
+
+INSTANTIATE_APPLY_UNARY(float, unsigned long)
+INSTANTIATE_APPLY_UNARY(float, int)
+INSTANTIATE_APPLY_UNARY(float, uint8_t)
+
+#define INSTANTIATE_ARG_REDUCE(U) \
+template void CudaBuffer<size_t>::arg_reduce<U>( \
+    const Shape&, const Strides&, size_t, \
+    const DeviceBuffer<U>*, const Strides&, size_t, \
+    size_t, ArgRedOp);
+
+INSTANTIATE_ARG_REDUCE(float)
 
 }

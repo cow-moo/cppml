@@ -212,7 +212,7 @@ public:
                 }
             };
         };
-        static constexpr auto table = cpu_utils::make_kernel_table_binop<T, U, V>(lambda);
+        static constexpr auto table = cpu_utils::make_kernel_table<BinOp>(lambda);
 
         auto kernel = table[static_cast<size_t>(op)];
 
@@ -263,7 +263,7 @@ public:
                 }
             };
         };
-        static constexpr auto table = cpu_utils::make_kernel_table_binop<T, U, V>(lambda);
+        static constexpr auto table = cpu_utils::make_kernel_table<BinOp>(lambda);
 
         auto kernel = table[static_cast<size_t>(op)];
 
@@ -310,7 +310,7 @@ public:
                 }
             };
         };
-        static constexpr auto table = cpu_utils::make_kernel_table_unop<T, U>(lambda);
+        static constexpr auto table = cpu_utils::make_kernel_table<UnOp>(lambda);
 
         auto kernel = table[static_cast<size_t>(op)];
 
@@ -379,7 +379,7 @@ public:
                     return local;
                 };
             };
-            static constexpr auto table = cpu_utils::make_kernel_table_binop<T, T, T>(lambda);
+            static constexpr auto table = cpu_utils::make_kernel_table<BinOp>(lambda);
 
             auto kernel = table[static_cast<size_t>(op)];
 
@@ -434,7 +434,7 @@ public:
                     }
                 };
             };
-            static constexpr auto table = cpu_utils::make_kernel_table_binop<T, T, T>(lambda);
+            static constexpr auto table = cpu_utils::make_kernel_table<BinOp>(lambda);
 
             auto kernel = table[static_cast<size_t>(op)];
 

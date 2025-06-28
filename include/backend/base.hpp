@@ -17,14 +17,15 @@ enum class BinOp {
     Mul,   // a * b
     Div,   // a / b
     DivBy, // b / a (for scalar / tensor)
+    Pass,  // b (for assignment)
+    Max,   // max(a, b)
+    Min,   // min(a, b)
     Eq,    // a == b
     Lt,    // a < b
     Lte,   // a <= b
     Gt,    // a > b (for tensor > scalar)
-    Gte,   // a >= b ( for tensor >= scalar)
-    Pass,  // b (for assignment)
-    Max,   // max(a, b)
-    Min,   // min(a, b)
+    Gte,   // a >= b (for tensor >= scalar)
+    Count
 };
 
 enum class UnOp {
@@ -32,11 +33,13 @@ enum class UnOp {
     Log,
     Neg,  // -x
     Pass, // for astype
+    Count
 };
 
 enum class ArgRedOp {
     Max,
     Min,
+    Count
 };
 
 template <typename T> class SharedBuffer;
@@ -52,11 +55,10 @@ template <typename T> class CudaBuffer;
         case BackendType::CpuMultiThread: \
             static_cast<CpuMultiThreadBuffer<T>*>(this)->template __VA_ARGS__; \
             break; \
+        case BackendType::Cuda: \
+            static_cast<CudaBuffer<T>*>(this)->template __VA_ARGS__; \
+            break; \
     }
-    //     case BackendType::Cuda: \
-    //         static_cast<CudaBuffer<T>*>(this)->template __VA_ARGS__; \
-    //         break; \
-    // }
 
 template <typename T>
 class DeviceBuffer {
