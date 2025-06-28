@@ -5,9 +5,10 @@
 //#include "solver.hpp"
 //#include "dataloader.hpp"
 //#include "loss.hpp"
-#include "backend.hpp"
+//#include "backend.hpp"
+// #include 
 #include "timing.hpp"
-#include "backend/cuda_buffer.hpp"
+//#include "backend/cuda_buffer.hpp"
 // #include <cuda_runtime.h>
 
 using linalg::Tensor;
@@ -28,7 +29,7 @@ int main() {
     // cudaFree(t);
     // return 0;
 
-    Tensor<> t({1, 2, 3}, backend::BackendType::Cuda);
+    Tensor<> t({1, 2, 3}, backend::BackendType::CpuSingleThread);
     t.print();
     std::cout << (float)t[0] << std::endl;
 }

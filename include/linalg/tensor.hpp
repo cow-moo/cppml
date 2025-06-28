@@ -56,19 +56,19 @@ public:
 
     /* ===== Arithmetic ===== */
     friend Tensor operator+(const Tensor& a, const Tensor& b) {
-        return a.apply_binary(b, backend::BinOp::Add);
+        return a.template apply_binary<backend::BinOp::Add>(b);
     }
 
     friend Tensor operator-(const Tensor& a, const Tensor& b) {
-        return a.apply_binary(b, backend::BinOp::Sub);
+        return a.template apply_binary<backend::BinOp::Sub>(b);
     }
 
     friend Tensor operator*(const Tensor& a, const Tensor& b) {
-        return a.apply_binary(b, backend::BinOp::Mul);
+        return a.template apply_binary<backend::BinOp::Mul>(b);
     }
 
     friend Tensor operator/(const Tensor& a, const Tensor& b) {
-        return a.apply_binary(b, backend::BinOp::Div);
+        return a.template apply_binary<backend::BinOp::Div>(b);
     }
 
     Tensor operator+(U other) const;
@@ -96,15 +96,15 @@ public:
 
     /* ===== Comparison ===== */
     friend Tensor<bool> operator==(const Tensor& a, const Tensor& b) {
-        return a.template apply_binary<bool>(b, backend::BinOp::Eq);
+        return a.template apply_binary<backend::BinOp::Eq, bool>(b);
     }
 
     friend Tensor<bool> operator<(const Tensor& a, const Tensor& b) {
-        return a.template apply_binary<bool>(b, backend::BinOp::Lt);
+        return a.template apply_binary<backend::BinOp::Lt, bool>(b);
     }
 
     friend Tensor<bool> operator<=(const Tensor& a, const Tensor& b) {
-        return a.template apply_binary<bool>(b, backend::BinOp::Lte);
+        return a.template apply_binary<backend::BinOp::Lte, bool>(b);
     }
 
     Tensor<bool> operator<(U other) const;
@@ -182,19 +182,22 @@ private:
     Tensor(const Tensor& orig, std::index_sequence<Is...>, Args&&... args);
     void process_get_arg(const Tensor& orig, std::size_t idx, int x);
     void process_get_arg(const Tensor& orig, std::size_t idx, Range range);
-    template <typename R = U, typename V = U>
-    Tensor<R> apply_binary(const Tensor<V>& other, backend::BinOp op) const;
-    template <typename R = U, typename V = U>
-    Tensor<R> apply_binary(V other, backend::BinOp op) const;
-    template <typename V = U>
-    Tensor& apply_binary_inplace(const Tensor<V>& other, backend::BinOp op);
-    template <typename V = U>
-    Tensor& apply_binary_inplace(V other, backend::BinOp op);
-    template <typename R = U>
-    Tensor<R> apply_unary(backend::UnOp op) const;
-    Tensor& apply_unary_inplace(backend::UnOp op);
-    Tensor reduce(const std::vector<int>& axes, U identity, backend::BinOp op, bool keepDims) const;
-    Tensor<size_t> arg_reduce(int axis, backend::ArgRedOp op, bool keepDim) const;
+    template <backend::BinOp Op, typename R = U, typename V = U>
+    Tensor<R> apply_binary(const Tensor<V>& other) const;
+    template <backend::BinOp Op, typename R = U, typename V = U>
+    Tensor<R> apply_binary(V other) const;
+    template <backend::BinOp Op, typename V = U>
+    Tensor& apply_binary_inplace(const Tensor<V>& other);
+    template <backend::BinOp Op, typename V = U>
+    Tensor& apply_binary_inplace(V other);
+    template <backend::UnOp Op, typename R = U>
+    Tensor<R> apply_unary() const;
+    template <backend::UnOp Op>
+    Tensor& apply_unary_inplace();
+    template <backend::BinOp Op>
+    Tensor reduce(const std::vector<int>& axes, U identity, bool keepDims) const;
+    template <backend::ArgRedOp Op>
+    Tensor<size_t> arg_reduce(int axis, bool keepDim) const;
 };
 
 

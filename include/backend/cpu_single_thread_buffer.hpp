@@ -71,21 +71,20 @@ public:
     //     return data_[i];
     // }
 
-    template <typename U, typename V>
+    template <BinOp Op, typename U, typename V>
     void apply_binary(const Shape& shape, const Strides& rStrides, size_t rOffset,
                       DeviceBuffer<U>* a, const Strides& aStrides, size_t aOffset,
-                      DeviceBuffer<V>* b, const Strides& bStrides, size_t bOffset,
-                      BinOp op) {
+                      DeviceBuffer<V>* b, const Strides& bStrides, size_t bOffset) {
         assert(a->backend_type() == BackendType::CpuSingleThread && 
                b->backend_type() == BackendType::CpuSingleThread);
 
         auto rIt = cpu_utils::StridedIterator<T>(data_, shape, rStrides, rOffset);
         auto aIt = cpu_utils::StridedIterator<U>(static_cast<CpuSingleThreadBuffer<U>*>(a)->data_, 
                                       shape, aStrides, aOffset);
-        auto bIt = cpu_utils::StridedIterator<V>(static_cast<CpuSingleThreadBuffer<U>*>(b)->data_, 
+        auto bIt = cpu_utils::StridedIterator<V>(static_cast<CpuSingleThreadBuffer<V>*>(b)->data_, 
                                       shape, bStrides, bOffset);
         
-        auto fn = cpu_utils::binop_table<T, U, V>[static_cast<size_t>(op)];
+        constexpr auto fn = cpu_utils::binop_table<T, U, V>[static_cast<size_t>(Op)];
         
         for (size_t i = 0; i < shape.numel(); i++) {
             *rIt = fn(*aIt, *bIt);
@@ -93,17 +92,17 @@ public:
         }
     }
 
-    template <typename U, typename V>
+    template <BinOp Op, typename U, typename V>
     void apply_binary(const Shape& shape, const Strides& rStrides, size_t rOffset,
                       DeviceBuffer<U>* a, const Strides& aStrides, size_t aOffset,
-                      V b, BinOp op) {
+                      V b) {
         assert(a->backend_type() == BackendType::CpuSingleThread);
 
         auto rIt = cpu_utils::StridedIterator<T>(data_, shape, rStrides, rOffset);
         auto aIt = cpu_utils::StridedIterator<U>(static_cast<CpuSingleThreadBuffer<U>*>(a)->data_, 
                                       shape, aStrides, aOffset);
         
-        auto fn = cpu_utils::binop_table<T, U, V>[static_cast<size_t>(op)];
+        constexpr auto fn = cpu_utils::binop_table<T, U, V>[static_cast<size_t>(Op)];
 
         for (size_t i = 0; i < shape.numel(); i++) {
             *rIt = fn(*aIt, b);
@@ -111,16 +110,15 @@ public:
         }
     }
 
-    template <typename U>
+    template <UnOp Op, typename U>
     void apply_unary(const Shape& shape, const Strides& rStrides, size_t rOffset,
-                     DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset,
-                     UnOp op) {
+                     DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset) {
         assert(other->backend_type() == BackendType::CpuSingleThread);
         auto otherIt = cpu_utils::StridedIterator<U>(static_cast<CpuSingleThreadBuffer<U>*>(other)->data_, 
                                           shape, otherStrides, otherOffset);
         auto rIt = cpu_utils::StridedIterator<T>(data_, shape, rStrides, rOffset);
         
-        auto fn = cpu_utils::unop_table<T, U>[static_cast<size_t>(op)];
+        constexpr auto fn = cpu_utils::unop_table<T, U>[static_cast<size_t>(Op)];
 
         for (size_t i = 0; i < shape.numel(); i++) {
             *rIt = fn(*otherIt);
@@ -128,14 +126,15 @@ public:
         }
     }
 
+    template <BinOp Op>
     void reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
                 const DeviceBuffer<T>* other, const Strides& otherStrides, size_t otherOffset,
-                const Shape& reduceShape, T identity, BinOp op) override {
+                const Shape& reduceShape, T identity) {
         assert(other->backend_type() == BackendType::CpuSingleThread);
 
-        apply_binary(rShape, rStrides, rOffset,
-                     this, rStrides, rOffset,
-                     identity, BinOp::Pass);
+        apply_binary<BinOp::Pass, T, T>(rShape, rStrides, rOffset,
+                                        this, rStrides, rOffset,
+                                        identity);
 
         Shape shape(rShape);
         Strides strides(rStrides);
@@ -144,17 +143,16 @@ public:
             strides.push_back(0);
         }
 
-        apply_binary(shape, strides, rOffset,
-                     this, strides, rOffset,
-                     const_cast<DeviceBuffer<T>*>(other), otherStrides, otherOffset,
-                     op);
+        apply_binary<Op, T, T>(shape, strides, rOffset,
+                               this, strides, rOffset,
+                               const_cast<DeviceBuffer<T>*>(other), otherStrides, otherOffset);
     }
 
     // Reduce on last dimension
-    template <typename U>
+    template <ArgRedOp Op, typename U>
     void arg_reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
                     const DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset,
-                    size_t reduceDim, ArgRedOp op) {
+                    size_t reduceDim) {
         static_assert(std::is_same_v<T, size_t>, "arg_reduce only works with T = size_t");
         assert(other->backend_type() == BackendType::CpuSingleThread);
         
@@ -164,7 +162,7 @@ public:
                                           otherShape, otherStrides, otherOffset);
         auto rIt = cpu_utils::StridedIterator<T>(data_, rShape, rStrides, rOffset);
 
-        auto fn = cpu_utils::argredop_table<U>[static_cast<size_t>(op)];
+        constexpr auto fn = cpu_utils::argredop_table<U>[static_cast<size_t>(Op)];
 
         for (size_t i = 0; i < rShape.numel(); i++) {
             std::pair<U, size_t> cur {*otherIt, 0};

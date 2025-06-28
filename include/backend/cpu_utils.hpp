@@ -18,7 +18,7 @@ constexpr auto make_kernel_table_impl(KernelGen gen, std::index_sequence<Is...>)
 }
 
 template <typename T, typename U, typename V>
-static constexpr BinOpFn<T, U, V> binop_table[] = {
+static constexpr BinOpFn<T, U, V> binop_table[14] = {
     [](U x, V y) -> T { return static_cast<T>(x + y); },          // BinOp::Add
     [](U x, V y) -> T { return static_cast<T>(x - y); },          // BinOp::Sub
     [](U x, V y) -> T { return static_cast<T>(y - x); },          // BinOp::SubBy
@@ -45,7 +45,7 @@ template <typename T, typename U>
 using UnOpFn = T(*)(U);
 
 template <typename T, typename U>
-static constexpr UnOpFn<T, U> unop_table[] = {
+static constexpr UnOpFn<T, U> unop_table[4] = {
     [](U x) { return static_cast<T>(std::exp(x)); },
     [](U x) { return static_cast<T>(std::log(x)); },
     [](U x) { return static_cast<T>(-x); },
@@ -62,7 +62,7 @@ template <typename U>
 using ArgRedOpFn = void(*)(std::pair<U, size_t>&, std::pair<U, size_t>);
 
 template <typename U>
-static constexpr ArgRedOpFn<U> argredop_table[] = {
+static constexpr ArgRedOpFn<U> argredop_table[2] = {
     [](std::pair<U, size_t>& x, std::pair<U, size_t> y) { x = std::max(x, y); },
     [](std::pair<U, size_t>& x, std::pair<U, size_t> y) { x = std::min(x, y); },
 };

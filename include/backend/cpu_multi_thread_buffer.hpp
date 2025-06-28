@@ -328,7 +328,7 @@ public:
 
     void reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
                 const DeviceBuffer<T>* other, const Strides& otherStrides, size_t otherOffset,
-                const Shape& reduceShape, [[maybe_unused]] T identity, BinOp op) override {
+                const Shape& reduceShape, [[maybe_unused]] T identity, BinOp op) {
         assert(other->backend_type() == BackendType::CpuMultiThread);
 
         // size_t numChunks_ = 0;

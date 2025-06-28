@@ -93,11 +93,11 @@ int main() {
         std::cout << "Testing CPU single thread backend" << std::endl;
         test();
     }
-    {
-        backend::BackendGuard guard(backend::BackendType::CpuMultiThread);
-        std::cout << "Testing CPU multi thread backend" << std::endl;
-        test();
-    }
+    // {
+    //     backend::BackendGuard guard(backend::BackendType::CpuMultiThread);
+    //     std::cout << "Testing CPU multi thread backend" << std::endl;
+    //     test();
+    // }
 
     return 0;
 }

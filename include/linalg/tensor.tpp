@@ -39,12 +39,12 @@ Tensor<U>::Tensor(const Tensor& other)
 
 template <typename U>
 Tensor<U>& Tensor<U>::operator=(U other) {
-    return apply_binary_inplace(other, backend::BinOp::Pass);
+    return apply_binary_inplace<backend::BinOp::Pass>(other);
 }
 
 template <typename U>
 Tensor<U>& Tensor<U>::operator=(const Tensor& other) {
-    return apply_binary_inplace(other, backend::BinOp::Pass);
+    return apply_binary_inplace<backend::BinOp::Pass>(other);
 }
 
 template <typename U>
@@ -107,63 +107,63 @@ Tensor<U> Tensor<U>::at(Args&&... args) const {
 // Tensor and Scalar
 template <typename U>
 Tensor<U> Tensor<U>::operator+(U other) const {
-    return apply_binary(other, backend::BinOp::Add);
+    return apply_binary<backend::BinOp::Add>(other);
 }
 
 template <typename U>
 Tensor<U> Tensor<U>::operator-(U other) const {
-    return apply_binary(other, backend::BinOp::Sub);
+    return apply_binary<backend::BinOp::Sub>(other);
 }
 
 template <typename U>
 Tensor<U> Tensor<U>::operator*(U other) const {
-    return apply_binary(other, backend::BinOp::Mul);
+    return apply_binary<backend::BinOp::Mul>(other);
 }
 
 template <typename U>
 Tensor<U> Tensor<U>::operator/(U other) const {
-    return apply_binary(other, backend::BinOp::Div);
+    return apply_binary<backend::BinOp::Div>(other);
 }
 
 // Inplace
 template <typename U>
 Tensor<U>& Tensor<U>::operator+=(const Tensor& other) {
-    return apply_binary_inplace(other, backend::BinOp::Add);
+    return apply_binary_inplace<backend::BinOp::Add>(other);
 }
 
 template <typename U>
 Tensor<U>& Tensor<U>::operator-=(const Tensor& other) {
-    return apply_binary_inplace(other, backend::BinOp::Sub);
+    return apply_binary_inplace<backend::BinOp::Sub>(other);
 }
 
 template <typename U>
 Tensor<U>& Tensor<U>::operator*=(const Tensor& other) {
-    return apply_binary_inplace(other, backend::BinOp::Mul);
+    return apply_binary_inplace<backend::BinOp::Mul>(other);
 }
 
 template <typename U>
 Tensor<U>& Tensor<U>::operator/=(const Tensor& other) {
-    return apply_binary_inplace(other, backend::BinOp::Div);
+    return apply_binary_inplace<backend::BinOp::Div>(other);
 }
 
 template <typename U>
 Tensor<U>& Tensor<U>::operator+=(U other) {
-    return apply_binary_inplace(other, backend::BinOp::Add);
+    return apply_binary_inplace<backend::BinOp::Add>(other);
 }
 
 template <typename U>
 Tensor<U>& Tensor<U>::operator-=(U other) {
-    return apply_binary_inplace(other, backend::BinOp::Sub);
+    return apply_binary_inplace<backend::BinOp::Sub>(other);
 }
 
 template <typename U>
 Tensor<U>& Tensor<U>::operator*=(U other) {
-    return apply_binary_inplace(other, backend::BinOp::Mul);
+    return apply_binary_inplace<backend::BinOp::Mul>(other);
 }
 
 template <typename U>
 Tensor<U>& Tensor<U>::operator/=(U other) {
-    return apply_binary_inplace(other, backend::BinOp::Div);
+    return apply_binary_inplace<backend::BinOp::Div>(other);
 }
 
 /* ===== Comparison ===== */
@@ -171,27 +171,27 @@ Tensor<U>& Tensor<U>::operator/=(U other) {
 // Tensor and Scalar
 template <typename U>
 Tensor<bool> Tensor<U>::operator<(U other) const {
-    return apply_binary<bool>(other, backend::BinOp::Lt);
+    return apply_binary<backend::BinOp::Lt, bool>(other);
 }
 
 template <typename U>
 Tensor<bool> Tensor<U>::operator>(U other) const {
-    return apply_binary<bool>(other, backend::BinOp::Gt);
+    return apply_binary<backend::BinOp::Gt, bool>(other);
 }
 
 template <typename U>
 Tensor<bool> Tensor<U>::operator<=(U other) const {
-    return apply_binary<bool>(other, backend::BinOp::Lte);
+    return apply_binary<backend::BinOp::Lte, bool>(other);
 }
 
 template <typename U>
 Tensor<bool> Tensor<U>::operator>=(U other) const {
-    return apply_binary<bool>(other, backend::BinOp::Gte);
+    return apply_binary<backend::BinOp::Gte, bool>(other);
 }
 
 template <typename U>
 Tensor<bool> Tensor<U>::operator==(U other) const {
-    return apply_binary<bool>(other, backend::BinOp::Eq);
+    return apply_binary<backend::BinOp::Eq, bool>(other);
 }
 
 /* ===== Unary Ops ===== */
@@ -203,32 +203,32 @@ Tensor<U> Tensor<U>::operator-() const {
 
 template <typename U>
 Tensor<U> Tensor<U>::exp() const {
-    return apply_unary(backend::UnOp::Exp);
+    return apply_unary<backend::UnOp::Exp>();
 }
 
 template <typename U>
 Tensor<U>& Tensor<U>::exp_() {
-    return apply_unary_inplace(backend::UnOp::Exp);
+    return apply_unary_inplace<backend::UnOp::Exp>();
 }
 
 template <typename U>
 Tensor<U> Tensor<U>::log() const {
-    return apply_unary(backend::UnOp::Log);
+    return apply_unary<backend::UnOp::Log>();
 }
 
 template <typename U>
 Tensor<U>& Tensor<U>::log_() {
-    return apply_unary_inplace(backend::UnOp::Log);
+    return apply_unary_inplace<backend::UnOp::Log>();
 }
 
 template <typename U>
 Tensor<U> Tensor<U>::neg() const {
-    return apply_unary(backend::UnOp::Neg);
+    return apply_unary<backend::UnOp::Neg>();
 }
 
 template <typename U>
 Tensor<U>& Tensor<U>::neg_() {
-    return apply_unary_inplace(backend::UnOp::Neg);
+    return apply_unary_inplace<backend::UnOp::Neg>();
 }
 
 template <typename U>
@@ -240,7 +240,7 @@ Tensor<U> Tensor<U>::relu() const {
 
 template <typename U>
 Tensor<U> Tensor<U>::sum(const std::vector<int>& axes, bool keepDims) const {
-    return reduce(axes, 0, backend::BinOp::Add, keepDims);
+    return reduce<backend::BinOp::Add>(axes, 0, keepDims);
 }
 
 template <typename U>
@@ -252,22 +252,22 @@ Tensor<U> Tensor<U>::sum() const {
 
 template <typename U>
 Tensor<U> Tensor<U>::max(const std::vector<int>& axes, bool keepDims) const {
-    return reduce(axes, std::numeric_limits<U>::lowest(), backend::BinOp::Max, keepDims);
+    return reduce<backend::BinOp::Max>(axes, std::numeric_limits<U>::lowest(), keepDims);
 }
 
 template <typename U>
 Tensor<U> Tensor<U>::min(const std::vector<int>& axes, bool keepDims) const {
-    return reduce(axes, std::numeric_limits<U>::max(), backend::BinOp::Min, keepDims);
+    return reduce<backend::BinOp::Min>(axes, std::numeric_limits<U>::max(), keepDims);
 }
 
 template <typename U>
 Tensor<size_t> Tensor<U>::argmax(int axis, bool keepDim) const {
-    return arg_reduce(axis, backend::ArgRedOp::Max, keepDim);
+    return arg_reduce<backend::ArgRedOp::Max>(axis, keepDim);
 }
 
 template <typename U>
 Tensor<size_t> Tensor<U>::argmin(int axis, bool keepDim) const {
-    return arg_reduce(axis, backend::ArgRedOp::Min, keepDim);
+    return arg_reduce<backend::ArgRedOp::Min>(axis, keepDim);
 }
 
 template <typename U>
@@ -460,7 +460,7 @@ backend::BackendType Tensor<U>::backend_type() const {
 template <typename U>
 template <typename R>
 Tensor<R> Tensor<U>::astype() const {
-    return apply_unary<R>(backend::UnOp::Pass);
+    return apply_unary<backend::UnOp::Pass, R>();
 }
 
 template <typename U>
@@ -605,29 +605,32 @@ void Tensor<U>::process_get_arg(const Tensor& orig, std::size_t idx, Range range
 }
 
 template <typename U>
-template <typename R, typename V>
-Tensor<R> Tensor<U>::apply_binary(const Tensor<V>& other, backend::BinOp op) const {
+template <backend::BinOp Op, typename R, typename V>
+Tensor<R> Tensor<U>::apply_binary(const Tensor<V>& other) const {
     assert(data_->backend_type() == other.data_->backend_type());
     auto [shape, strides, otherStrides] = Shape::broadcast(shape_, strides_, other.shape_, other.strides_);
 
     Tensor<R> res(shape, data_->backend_type());
 
     // We can const_cast because we know res != this and other
-    res.data_->apply_binary(shape, res.strides_, res.offset_,
-                            const_cast<backend::DeviceBuffer<U>*>(data_.get()), strides, offset_,
-                            const_cast<backend::DeviceBuffer<V>*>(other.data_.get()), otherStrides, other.offset_,
-                            op);
+    backend::DeviceBuffer<U>* data = const_cast<backend::DeviceBuffer<U>*>(data_.get());
+    backend::DeviceBuffer<U>* otherData = const_cast<backend::DeviceBuffer<V>*>(other.data_.get());
+
+    res.data_->template apply_binary<Op, U, V>(shape, res.strides_, res.offset_,
+                                               data, strides, offset_,
+                                               otherData, otherStrides, other.offset_);
 
     return res;
 }
 
 template <typename U>
-template <typename R, typename V>
-Tensor<R> Tensor<U>::apply_binary(V other, backend::BinOp op) const {
+template <backend::BinOp Op, typename R, typename V>
+Tensor<R> Tensor<U>::apply_binary(V other) const {
     Tensor<R> res(shape_, data_->backend_type());
-    res.data_->apply_binary(shape_, res.strides_, res.offset_,
-                            const_cast<backend::DeviceBuffer<U>*>(data_.get()), strides_, offset_,
-                            other, op);
+    backend::DeviceBuffer<U>* data = const_cast<backend::DeviceBuffer<U>*>(data_.get());
+    res.data_->template apply_binary<Op, U, V>(shape_, res.strides_, res.offset_,
+                                               data, strides_, offset_,
+                                               other);
     return res;
 }
 
@@ -635,8 +638,8 @@ Tensor<R> Tensor<U>::apply_binary(V other, backend::BinOp op) const {
 // LHS tensor must be greater in all dimensions
 // Func should have some signature op(U&, U) -> void
 template <typename U>
-template <typename V>
-Tensor<U>& Tensor<U>::apply_binary_inplace(const Tensor<V>& other, backend::BinOp op) {
+template <backend::BinOp Op, typename V>
+Tensor<U>& Tensor<U>::apply_binary_inplace(const Tensor<V>& other) {
     auto [shape, _, otherStrides] = Shape::broadcast(shape_, strides_, other.shape_, other.strides_);
     
     if (shape_ != shape) {
@@ -644,20 +647,20 @@ Tensor<U>& Tensor<U>::apply_binary_inplace(const Tensor<V>& other, backend::BinO
         throw std::invalid_argument("Broadcast failed.");
     }
 
-    data_->apply_binary(shape_, strides_, offset_,
+    backend::DeviceBuffer<U>* otherData = const_cast<backend::DeviceBuffer<U>*>(other.data_.get());
+    data_->template apply_binary<Op, U, V>(shape_, strides_, offset_,
                         data_.get(), strides_, offset_,
-                        const_cast<backend::DeviceBuffer<U>*>(other.data_.get()), otherStrides, other.offset_,
-                        op);
+                        otherData, otherStrides, other.offset_);
 
     return *this;
 }
 
 template <typename U>
-template <typename V>
-Tensor<U>& Tensor<U>::apply_binary_inplace(V other, backend::BinOp op) {
-    data_->apply_binary(shape_, strides_, offset_,
-                        data_.get(), strides_, offset_,
-                        other, op);
+template <backend::BinOp Op, typename V>
+Tensor<U>& Tensor<U>::apply_binary_inplace(V other) {
+    data_->template apply_binary<Op, U, V>(shape_, strides_, offset_,
+                                           data_.get(), strides_, offset_,
+                                           other);
 
     return *this;
 }
@@ -665,29 +668,30 @@ Tensor<U>& Tensor<U>::apply_binary_inplace(V other, backend::BinOp op) {
 // Apply some operation on some tensor, returning a new one
 // Func should have signature op(U) -> R
 template <typename U>
-template <typename R>
-Tensor<R> Tensor<U>::apply_unary(backend::UnOp op) const {
+template <backend::UnOp Op, typename R>
+Tensor<R> Tensor<U>::apply_unary() const {
     Tensor<R> res = Tensor<R>(shape_, data_->backend_type());
     // We can const_cast because we know res != this
-    res.data_->apply_unary(shape_, res.strides_, res.offset_,
-                            const_cast<backend::DeviceBuffer<U>*>(data_.get()), strides_, offset_, 
-                            op);
+    backend::DeviceBuffer<U>* data = const_cast<backend::DeviceBuffer<U>*>(data_.get());
+    res.data_->template apply_unary<Op, U>(shape_, res.strides_, res.offset_,
+                                           data, strides_, offset_);
     return res;
 }
 
 // Apply some operation on some tensor, modifying it in place
 // Func should have signature op(U&) -> void
 template <typename U>
-Tensor<U>& Tensor<U>::apply_unary_inplace(backend::UnOp op) {
-    data_->apply_unary(shape_, strides_, offset_,
-                        data_.get(), strides_, offset_, 
-                        op);
+template <backend::UnOp Op>
+Tensor<U>& Tensor<U>::apply_unary_inplace() {
+    data_->template apply_unary<Op, U>(shape_, strides_, offset_,
+                                       data_.get(), strides_, offset_);
     return *this;
 }
 
 // Allows duplicate axes and ignores them
 template <typename U>
-Tensor<U> Tensor<U>::reduce(const std::vector<int>& axes, U identity, backend::BinOp op, bool keepDims) const {
+template <backend::BinOp Op>
+Tensor<U> Tensor<U>::reduce(const std::vector<int>& axes, U identity, bool keepDims) const {
     if (axes.size() == 0)
         return copy();
 
@@ -719,9 +723,9 @@ Tensor<U> Tensor<U>::reduce(const std::vector<int>& axes, U identity, backend::B
 
     Tensor res(rShape, data_->backend_type());
 
-    res.data_->reduce(rShape, res.strides_, res.offset_,
-                        data_.get(), otherStrides, offset_,
-                        reduceShape, identity, op);
+    res.data_->template reduce<Op>(rShape, res.strides_, res.offset_,
+                                      data_.get(), otherStrides, offset_,
+                                      reduceShape, identity);
 
     if (keepDims) {
         Shape newShape(shape_);
@@ -734,7 +738,8 @@ Tensor<U> Tensor<U>::reduce(const std::vector<int>& axes, U identity, backend::B
 }
 
 template <typename U>
-Tensor<size_t> Tensor<U>::arg_reduce(int axis, backend::ArgRedOp op, bool keepDim) const {
+template <backend::ArgRedOp Op>
+Tensor<size_t> Tensor<U>::arg_reduce(int axis, bool keepDim) const {
     assert(shape_.size() > 0);
 
     if (axis < 0) axis += shape_.size();
@@ -747,9 +752,9 @@ Tensor<size_t> Tensor<U>::arg_reduce(int axis, backend::ArgRedOp op, bool keepDi
     Shape newShape(shape);
     newShape.pop_back();
     Tensor<size_t> res(newShape, data_->backend_type());
-    res.data_->arg_reduce(newShape, res.strides_, res.offset_,
-                            data_.get(), strides, offset_,
-                            shape.back(), op);
+    res.data_->template arg_reduce<Op, U>(newShape, res.strides_, res.offset_,
+                                          data_.get(), strides, offset_,
+                                          shape.back());
 
     if (keepDim)
         return res.unsqueeze(axis);

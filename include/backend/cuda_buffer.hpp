@@ -45,7 +45,7 @@ public:
 
     void reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
                 const DeviceBuffer<T>* other, const Strides& otherStrides, size_t otherOffset,
-                const Shape& reduceShape, T identity, BinOp op) override;
+                const Shape& reduceShape, T identity, BinOp op);
 
     // Reduce on last dimension
     template <typename U>

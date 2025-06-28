@@ -49,13 +49,14 @@ template <typename T> class CudaBuffer;
         case BackendType::CpuSingleThread: \
             static_cast<CpuSingleThreadBuffer<T>*>(this)->template __VA_ARGS__; \
             break; \
-        case BackendType::CpuMultiThread: \
-            static_cast<CpuMultiThreadBuffer<T>*>(this)->template __VA_ARGS__; \
-            break; \
-        case BackendType::Cuda: \
-            static_cast<CudaBuffer<T>*>(this)->template __VA_ARGS__; \
-            break; \
     }
+    //     case BackendType::CpuMultiThread: \
+    //         static_cast<CpuMultiThreadBuffer<T>*>(this)->template __VA_ARGS__; \
+    //         break; \
+    //     case BackendType::Cuda: \
+    //         static_cast<CudaBuffer<T>*>(this)->template __VA_ARGS__; \
+    //         break; \
+    // }
 
 template <typename T>
 class DeviceBuffer {
@@ -73,41 +74,42 @@ public:
     //virtual const T& at(size_t i) const = 0;
 
     // Fake virtual function due to template
-    template <typename U, typename V>
+    template <BinOp Op, typename U, typename V>
     void apply_binary(const Shape& shape, const Strides& rStrides, size_t rOffset,
                       DeviceBuffer<U>* a, const Strides& aStrides, size_t aOffset, 
-                      DeviceBuffer<V>* b, const Strides& bStrides, size_t bOffset,
-                      BinOp op) {
-        BACKEND_DISPATCH(apply_binary(shape, rStrides, rOffset, a, aStrides, aOffset, b, bStrides, bOffset, op));
+                      DeviceBuffer<V>* b, const Strides& bStrides, size_t bOffset) {
+        BACKEND_DISPATCH(apply_binary<Op, U, V>(shape, rStrides, rOffset, a, aStrides, aOffset, b, bStrides, bOffset));
     }
 
-    template <typename U, typename V>
+    template <BinOp Op, typename U, typename V>
     void apply_binary(const Shape& shape, const Strides& rStrides, size_t rOffset,
                       DeviceBuffer<U>* a, const Strides& aStrides, size_t aOffset,
-                      V b, BinOp op) {
-        BACKEND_DISPATCH(apply_binary(shape, rStrides, rOffset, a, aStrides, aOffset, b, op));
+                      V b) {
+        BACKEND_DISPATCH(apply_binary<Op, U, V>(shape, rStrides, rOffset, a, aStrides, aOffset, b));
     }
 
-    template <typename U>
+    template <UnOp Op, typename U>
     void apply_unary(const Shape& shape, const Strides& rStrides, size_t rOffset,
-                     DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset,
-                     UnOp op) {
-        BACKEND_DISPATCH(apply_unary(shape, rStrides, rOffset, other, otherStrides, otherOffset, op));
+                     DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset) {
+        BACKEND_DISPATCH(apply_unary<Op, U>(shape, rStrides, rOffset, other, otherStrides, otherOffset));
     }
 
     // Reduce on last k dimensions (implied by reduceShape)
     // otherShape = rShape + reduceShape
-    virtual void reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
+    template <BinOp Op>
+    void reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
                 const DeviceBuffer* other, const Strides& otherStrides, size_t otherOffset,
-                const Shape& reduceShape, T identity, BinOp op) = 0;
+                const Shape& reduceShape, T identity) {
+        BACKEND_DISPATCH(reduce<Op>(rShape, rStrides, rOffset, other, otherStrides, otherOffset, reduceShape, identity));
+    }
 
     // Reduce on last dimension
-    template <typename U>
+    template <ArgRedOp Op, typename U>
     void arg_reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
                     const DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset,
-                    size_t reduceDim, ArgRedOp op) {
+                    size_t reduceDim) {
         static_assert(std::is_same_v<T, size_t>, "arg_reduce only works with T = size_t");
-        BACKEND_DISPATCH(arg_reduce(rShape, rStrides, rOffset, other, otherStrides, otherOffset, reduceDim, op));
+        BACKEND_DISPATCH(arg_reduce<Op, U>(rShape, rStrides, rOffset, other, otherStrides, otherOffset, reduceDim));
     }
 
     virtual void matmul(const Shape& rShape, const Strides& rStrides, size_t rOffset,
