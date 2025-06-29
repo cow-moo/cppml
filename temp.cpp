@@ -28,9 +28,6 @@ int main() {
     // cudaFree(t);
     // return 0;
 
-    Tensor<bool> s({true, true, true}, backend::BackendType::Cuda);
-    s.print();
-
     Tensor<> t({1, 2, 3}, backend::BackendType::Cuda);
     // t.print();
     // (t + t).print();

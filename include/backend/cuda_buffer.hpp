@@ -19,7 +19,11 @@ public:
 
     std::vector<T> read_flat() const override;
 
-    std::vector<T> read_strided(const Shape& shape, const Strides& strides, size_t offset) const override;
+    std::vector<T> read_strided(const Shape& shape, const Strides& strides, size_t offset) const override {
+        std::vector<T> res(shape.numel());
+        std::cout << res.size() << std::endl;
+        return res;
+    }
 
     T read_at(size_t) const override;
 
