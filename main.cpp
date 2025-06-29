@@ -30,7 +30,9 @@ int main() {
 
     Tensor<> t({1, 2, 3}, backend::BackendType::Cuda);
     t.print();
-    std::cout << (float)t[0] << std::endl;
+    Tensor<> tt = t + t;
+    tt.print();
+    //std::cout << (float)t[0] << std::endl;
 }
 
 /*
