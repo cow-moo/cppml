@@ -26,6 +26,9 @@ public:
     size_t* data() { return dims_.data(); }
     const size_t* data() const { return dims_.data(); }
 
+    std::array<size_t, config::MAX_DIMS> array() { return dims_; }
+    const std::array<size_t, config::MAX_DIMS> array() const { return dims_; }
+
     auto front() const { return dims_.front(); }
     auto back() const { return dims_[size_ - 1]; }
 
@@ -129,6 +132,9 @@ public:
     
     size_t* data() { return dims_.data(); }
     const size_t* data() const { return dims_.data(); }
+
+    std::array<size_t, config::MAX_DIMS> array() { return dims_; }
+    const std::array<size_t, config::MAX_DIMS> array() const { return dims_; }
 
     auto front() const { return dims_.front(); }
     auto back() const { return dims_[size_ - 1]; }

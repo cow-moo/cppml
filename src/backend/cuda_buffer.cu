@@ -1,5 +1,6 @@
 #include "backend/cuda_buffer.hpp"
 #include "config.hpp"
+#include "backend/cpu_utils.hpp"
 #include <cuda_runtime.h>
 #include <vector>
 
@@ -8,97 +9,25 @@ namespace backend {
 using linalg::Shape;
 using linalg::Strides;
 
+using ShapeArray = std::array<size_t, config::MAX_DIMS>;
+using StridesArray = std::array<size_t, config::MAX_DIMS>;
+
 constexpr int THREADS_PER_BLOCK = 256;
 
-__constant__ void *R_BUFFER, *A_BUFFER, *B_BUFFER;
-__constant__ size_t R_SHAPE[config::MAX_DIMS]; //, otherShape[config::MAX_DIMS];
-__constant__ size_t R_STRIDES[config::MAX_DIMS], A_STRIDES[config::MAX_DIMS], B_STRIDES[config::MAX_DIMS];
-__constant__ size_t R_OFFSET, A_OFFSET, B_OFFSET;
-__constant__ size_t R_NDIM;
-__constant__ size_t R_NUMEL;
-
-template <void** Symbol>
-static void write_const_symbol(const void* buffer) {
-    cudaMemcpyToSymbol(*Symbol, &buffer, sizeof(void*));
-}
-
-template <const size_t* Symbol>
-static void write_const_symbol(size_t value) {
-    cudaMemcpyToSymbol(*Symbol, &value, sizeof(size_t));
-}
-
-template <const size_t (*Symbol)[config::MAX_DIMS]>
-static void write_const_symbol(const Shape& shape) {
-    cudaMemcpyToSymbol(*Symbol, shape.data(), config::MAX_DIMS * sizeof(size_t));
-}
-
-template <const size_t (*Symbol)[config::MAX_DIMS]>
-static void write_const_symbol(const Strides& strides) {
-    cudaMemcpyToSymbol(*Symbol, strides.data(), config::MAX_DIMS * sizeof(size_t));
-}
-
-template <size_t Input>
-static void write_const_tensor(const void* buffer, const Shape& shape, const Strides& strides, size_t offset) {
-    if constexpr (Input == 0) {
-        write_const_symbol<&R_BUFFER>(buffer);
-        write_const_symbol<&R_SHAPE>(shape);
-        write_const_symbol<&R_STRIDES>(strides);
-        write_const_symbol<&R_OFFSET>(offset);
-        write_const_symbol<&R_NDIM>(shape.size());
-        write_const_symbol<&R_NUMEL>(shape.numel());
-    }
-    else if constexpr (Input == 1) {
-        write_const_symbol<&A_BUFFER>(buffer);
-        write_const_symbol<&A_STRIDES>(strides);
-        write_const_symbol<&A_OFFSET>(offset);
-    }
-    else {
-        write_const_symbol<&B_BUFFER>(buffer);
-        write_const_symbol<&B_STRIDES>(strides);
-        write_const_symbol<&B_OFFSET>(offset);
-    }
-}
-
-// __device__ size_t flat_to_data_idx(size_t flatIdx, std::array<size_t, config::MAX_DIMS> shape, std::array<size_t, config::MAX_DIMS> strides, size_t offset) {
-
-// }
-
-// Input = 0 -> rBuffer, rShape, rStrides, rOffset
-// Input = 1 -> aBuffer, rShape, aStrides, aOffset
-// Input = 2 -> bBuffer, rShape, bStrides, bOffset
-template <size_t Input>
-__device__ size_t flat_to_data_idx(size_t flatIdx) {
-    size_t res = Input == 0 ? R_OFFSET :
-                 Input == 1 ? A_OFFSET :
-                 B_OFFSET;
-    for (size_t i = R_NDIM; i-- > 0;) {
-        res += (flatIdx % R_SHAPE[i]) * (
-            Input == 0 ? R_STRIDES[i] :
-            Input == 1 ? A_STRIDES[i] :
-            B_STRIDES[i]);
-        flatIdx /= R_SHAPE[i];
+__device__ size_t flat_to_data_idx(
+    size_t flatIdx, 
+    const size_t ndim, 
+    const ShapeArray shape,
+    const StridesArray strides,
+    const size_t offset) 
+{
+    size_t res = offset;
+    for (size_t i = ndim; i-- > 0;) {
+        res += (flatIdx % shape[i]) * strides[i];
+        flatIdx /= shape[i];
     }
     return res;
 }
-
-template <typename T, size_t Input>
-__device__ T read_at_flat(size_t flatIdx) {
-    size_t dataIdx = flat_to_data_idx<Input>(flatIdx);
-    T* buffer = static_cast<T*>(Input == 0 ? R_BUFFER :
-                                Input == 1 ? A_BUFFER :
-                                B_BUFFER);
-    return buffer[dataIdx];
-}
-
-template <typename T, size_t Input>
-__device__ void write_at_flat(size_t flatIdx, T val) {
-    size_t dataIdx = flat_to_data_idx<Input>(flatIdx);
-    T* buffer = static_cast<T*>(Input == 0 ? R_BUFFER :
-                                Input == 1 ? A_BUFFER :
-                                B_BUFFER);
-    buffer[dataIdx] = val;
-}
-
 
 template <typename T>
 CudaBuffer<T>::CudaBuffer(size_t size) : DeviceBuffer<T>(BackendType::Cuda), size_(size) {
@@ -145,13 +74,22 @@ std::vector<bool> CudaBuffer<bool>::read_flat() const {
 }
 
 template <typename T>
-__global__ void read_strided_kernel(T* dst) {
+__global__ void read_strided_kernel(
+    T* dst, 
+    const T* src,
+    const size_t numel,
+    const size_t ndim, 
+    const ShapeArray shape,
+    const StridesArray strides,
+    const size_t offset) 
+{
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= R_NUMEL) return;
+    if (idx >= numel) return;
 
     //size_t dataIdx = flat_to_data_idx<0>(idx);
     //dst[idx] = src[dataIdx];
-    dst[idx] = read_at_flat<T, 0>(idx);
+    dst[idx] = src[flat_to_data_idx(idx, ndim, shape, strides, offset)];
+    //dst[idx] = read_at_flat<T, 0>(idx);
 }
 
 template <typename T>
@@ -162,10 +100,18 @@ static std::vector<T> read_strided_helper(const Shape& shape, const Strides& str
     T* strided;
     cudaMalloc(&strided, numel * sizeof(T));
     
-    write_const_tensor<0>(data, shape, strides, offset);
+    //write_const_tensor<0>(data, shape, strides, offset);
 
     int blocks = (numel + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
-    read_strided_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(strided);
+    read_strided_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(
+        strided,
+        data,
+        numel,
+        shape.size(),
+        shape.array(),
+        strides.array(),
+        offset
+    );
     cudaMemcpy(res.data(), strided, numel * sizeof(T), cudaMemcpyDeviceToHost);
     cudaFree(strided);
     return res;
@@ -193,14 +139,22 @@ T CudaBuffer<T>::read_at(size_t offset) const {
     return val;
 }
 
-template <typename T, typename U, typename V, BinOp Op>
-__global__ void apply_binary_kernel(T* temp)
+template <typename T, typename U, typename V, size_t Op>
+__global__ void apply_binary_kernel(
+    size_t numel, size_t ndim, const ShapeArray shape,
+    T* rData, const StridesArray rStrides, const size_t rOffset,
+    U* aData, const StridesArray aStrides, const size_t aOffset,
+    V* bData, const StridesArray bStrides, const size_t bOffset)
 {
     size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= R_NUMEL) return;
+    if (idx >= numel) return;
 
-    temp[idx] = 100;
-    //write_at_flat<T, 0>(idx, 100);//read_at_flat<U, 1>(idx) * read_at_flat<V, 2>(idx));
+    size_t rIdx = flat_to_data_idx(idx, ndim, shape, rStrides, rOffset);
+    size_t aIdx = flat_to_data_idx(idx, ndim, shape, aStrides, aOffset);
+    size_t bIdx = flat_to_data_idx(idx, ndim, shape, bStrides, bOffset);
+
+    constexpr auto fn = cpu_utils::binop_table<T, U, V>[Op];
+    rData[rIdx] = fn(aData[aIdx], bData[bIdx]);
 }
 
 template <typename T>
@@ -217,12 +171,66 @@ void CudaBuffer<T>::apply_binary(
     U* aData = static_cast<CudaBuffer<U>*>(a)->data_;
     V* bData = static_cast<CudaBuffer<V>*>(b)->data_;
 
-    write_const_tensor<0>(data_, shape, rStrides, rOffset);
-    write_const_tensor<1>(aData, shape, aStrides, aOffset);
-    write_const_tensor<2>(bData, shape, bStrides, bOffset);
+    //write_const_tensor<0>(data_, shape, rStrides, rOffset);
+    //write_const_tensor<1>(aData, shape, aStrides, aOffset);
+    //write_const_tensor<2>(bData, shape, bStrides, bOffset);
 
-    int blocks = (shape.numel() + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
-    apply_binary_kernel<T, U, V, BinOp::Add><<<blocks, THREADS_PER_BLOCK>>>(data_);
+    using Kernel = void(*)(size_t, size_t, const ShapeArray,
+                          T*, const StridesArray, const size_t,
+                          U*, const StridesArray, const size_t,
+                          V*, const StridesArray, const size_t);
+    static constexpr auto lambda = []<size_t Op>() -> Kernel {
+        return [](size_t numel, size_t ndim, const ShapeArray shape,
+                  T* rData, const StridesArray rStrides, const size_t rOffset,
+                  U* aData, const StridesArray aStrides, const size_t aOffset,
+                  V* bData, const StridesArray bStrides, const size_t bOffset) {
+            int blocks = (numel + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+            apply_binary_kernel<T, U, V, Op><<<blocks, THREADS_PER_BLOCK>>>(
+                numel, ndim, shape,
+                rData, rStrides, rOffset,
+                aData, aStrides, aOffset,
+                bData, bStrides, bOffset
+            );
+        };
+    };
+    // struct KernelGen {
+    //     using Kernel = void(*)(size_t, size_t, const ShapeArray,
+    //                     T*, const StridesArray, const size_t,
+    //                     U*, const StridesArray, const size_t,
+    //                     V*, const StridesArray, const size_t);
+    //     template <size_t Op>
+    //     Kernel operator() {
+    //         return [](size_t numel, size_t ndim, const ShapeArray shape,
+    //                 T* rData, const StridesArray rStrides, const size_t rOffset,
+    //                 U* aData, const StridesArray aStrides, const size_t aOffset,
+    //                 V* bData, const StridesArray bStrides, const size_t bOffset) {
+    //             int blocks = (numel + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+    //             apply_binary_kernel<T, U, V, Op><<<blocks, THREADS_PER_BLOCK>>>(
+    //                 numel, ndim, shape,
+    //                 rData, rStrides, rOffset,
+    //                 aData, aStrides, aOffset,
+    //                 bData, bStrides, bOffset
+    //             );
+    //         };
+    //     }
+    // }
+
+    static constexpr auto table = cpu_utils::make_kernel_table<BinOp>(lambda);
+
+    table[static_cast<size_t>(op)](
+        shape.numel(), shape.size(), shape.array(),
+        data_, rStrides.array(), rOffset,
+        aData, aStrides.array(), aOffset,
+        bData, bStrides.array(), bOffset
+    );
+
+    // int blocks = (shape.numel() + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+    // apply_binary_kernel<T, U, V, BinOp::Add><<<blocks, THREADS_PER_BLOCK>>>(
+    //     shape.numel(), shape.size(), shape.array(),
+    //     data_, rStrides.array(), rOffset,
+    //     aData, aStrides.array(), aOffset,
+    //     bData, bStrides.array(), bOffset
+    // );
     
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess)

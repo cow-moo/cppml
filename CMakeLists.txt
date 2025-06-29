@@ -32,7 +32,7 @@ set_target_properties(lib PROPERTIES
 )
 
 target_compile_options(lib PRIVATE
-    $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
+    $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr -diag-suppress=3288 -diag-suppress=445>
 )
 
 file(GLOB TEST_FILES ${CMAKE_SOURCE_DIR}/tests/*.cpp)

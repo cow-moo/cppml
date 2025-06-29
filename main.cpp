@@ -30,8 +30,10 @@ int main() {
 
     Tensor<> t({1, 2, 3}, backend::BackendType::Cuda);
     t.print();
-    Tensor<> tt = t + t;
-    tt.print();
+    (t + t).print();
+    (t * t).print();
+    (t / t).print();
+    (t - t).print();
     //std::cout << (float)t[0] << std::endl;
 }
 
