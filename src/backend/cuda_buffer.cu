@@ -41,26 +41,27 @@ CudaBuffer<T>::~CudaBuffer() {
 
 template <typename T>
 void CudaBuffer<T>::write_flat(const std::vector<T>& values) {
-    std::cout << size_ << " " << values.size() << std::endl;
-    //cudaMemcpy(data_, values.data(), size_ * sizeof(T), cudaMemcpyHostToDevice);
+    //std::cout << size_ << " " << values.size() << std::endl;
+    assert(size_ == values.size());
+    cudaMemcpy(data_, values.data(), size_ * sizeof(T), cudaMemcpyHostToDevice);
 }
 
 // Vector bools perform bit packing so we must specialize
-// template <>
-// void CudaBuffer<bool>::write_flat(const std::vector<bool>& values) {
-//     assert(sizeof(bool) == sizeof(uint8_t));
-//     std::cout << size_ << " " << values.size() << std::endl;
-//     assert(size_ == values.size());
-//     std::vector<uint8_t> raw(values.size());
-//     for (size_t i = 0; i < values.size(); ++i)
-//         raw[i] = static_cast<uint8_t>(values[i]);
-//     //cudaMemcpy(data_, raw.data(), size_ * sizeof(bool), cudaMemcpyHostToDevice);
-// }
+template <>
+void CudaBuffer<bool>::write_flat(const std::vector<bool>& values) {
+    assert(sizeof(bool) == sizeof(uint8_t));
+    //std::cout << size_ << " " << values.size() << std::endl;
+    assert(size_ == values.size());
+    std::vector<uint8_t> raw(values.size());
+    for (size_t i = 0; i < values.size(); ++i)
+        raw[i] = static_cast<uint8_t>(values[i]);
+    cudaMemcpy(data_, raw.data(), size_ * sizeof(bool), cudaMemcpyHostToDevice);
+}
 
 template <typename T>
 std::vector<T> CudaBuffer<T>::read_flat() const {
     std::vector<T> res(size_);
-    //cudaMemcpy(res.data(), data_, size_ * sizeof(T), cudaMemcpyDeviceToHost);
+    cudaMemcpy(res.data(), data_, size_ * sizeof(T), cudaMemcpyDeviceToHost);
     return res;
 }
 
@@ -68,7 +69,7 @@ std::vector<T> CudaBuffer<T>::read_flat() const {
 template <>
 std::vector<bool> CudaBuffer<bool>::read_flat() const {
     std::vector<uint8_t> raw(size_);
-    //cudaMemcpy(raw.data(), data_, size_ * sizeof(uint8_t), cudaMemcpyDeviceToHost);
+    cudaMemcpy(raw.data(), data_, size_ * sizeof(uint8_t), cudaMemcpyDeviceToHost);
     
     std::vector<bool> res(size_);
     for (size_t i = 0; i < size_; ++i) {
@@ -111,33 +112,30 @@ static std::vector<T> read_strided_helper(const Shape& shape, const Strides& str
         strides.array(),
         offset
     );
-    //cudaMemcpy(res.data(), strided, numel * sizeof(T), cudaMemcpyDeviceToHost);
+    cudaMemcpy(res.data(), strided, numel * sizeof(T), cudaMemcpyDeviceToHost);
     cudaFree(strided);
     return res;
 }
 
-// template <typename T>
-// std::vector<T> CudaBuffer<T>::read_strided(const Shape& shape, const Strides& strides, size_t offset) const {
-//     std::vector<T> res(shape.numel());
-//     return res;
-//     //return read_strided_helper(shape, strides, offset, data_);
-// }
+template <typename T>
+std::vector<T> CudaBuffer<T>::read_strided(const Shape& shape, const Strides& strides, size_t offset) const {
+    return read_strided_helper(shape, strides, offset, data_);
+}
 
 // Vector bools perform bit packing so we must specialize
-// template <>
-// std::vector<bool> CudaBuffer<bool>::read_strided(const Shape& shape, const Strides& strides, size_t offset) const {
-//     //std::vector<uint8_t> raw(shape.numel());//read_strided_helper<uint8_t>(shape, strides, offset, reinterpret_cast<uint8_t*>(data_));
-//     std::vector<bool> res(shape.numel());
-//     //for (size_t i = 0; i < raw.size(); ++i)
-//     //    res[i] = static_cast<bool>(raw[i]);
-//     std::cout << "a" << res.size() << std::endl;
-//     return res;
-// }
+template <>
+std::vector<bool> CudaBuffer<bool>::read_strided(const Shape& shape, const Strides& strides, size_t offset) const {
+    std::vector<uint8_t> raw = read_strided_helper<uint8_t>(shape, strides, offset, reinterpret_cast<uint8_t*>(data_));
+    std::vector<bool> res(shape.numel());
+    for (size_t i = 0; i < raw.size(); ++i)
+       res[i] = static_cast<bool>(raw[i]);
+    return res;
+}
 
 template <typename T>
 T CudaBuffer<T>::read_at(size_t offset) const {
     T val;
-    //cudaMemcpy(&val, &data_[offset], sizeof(T), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&val, &data_[offset], sizeof(T), cudaMemcpyDeviceToHost);
     return val;
 }
 

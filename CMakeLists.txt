@@ -1,15 +1,27 @@
 cmake_minimum_required(VERSION 3.10)
 project(MyProject LANGUAGES CXX CUDA)
 
+# C++ and CUDA versions
 set(CMAKE_CXX_STANDARD 23)
-set(CMAKE_CXX_STANDARD_REQUIRED True)
-
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-
 set(CMAKE_CUDA_ARCHITECTURES 75)
 
-set(CMAKE_CUDA_HOST_COMPILER /usr/bin/clang++-17)
+# Detect Clang toolchain and configure accordingly
+if(APPLE)
+    # macOS: Clang + libc++
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
+else()
+    # Linux: Clang + libstdc++
+    set(CMAKE_CXX_COMPILER /usr/bin/clang++-17)
+    set(CMAKE_C_COMPILER /usr/bin/clang-17)
+    set(CMAKE_CUDA_HOST_COMPILER /usr/bin/clang++-17)
+
+    # Do NOT use libc++ on Linux — CUDA forbids it
+    # Remove any -stdlib=libc++ flags
+endif()
 
 include_directories(${CMAKE_SOURCE_DIR}/include)
 #include_directories(/usr/local/cuda/include)
@@ -35,26 +47,33 @@ target_compile_options(lib PRIVATE
     $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr -diag-suppress=3288 -diag-suppress=445>
 )
 
+# Helper function to define executables
+function(add_my_executable target file)
+    add_executable(${target} ${file})
+    set_target_properties(${target} PROPERTIES LINKER_LANGUAGE CUDA)
+    target_link_libraries(${target} lib)
+
+    target_compile_options(${target} PRIVATE -Wall -Wextra -O2)
+
+    if(APPLE)
+        target_compile_options(${target} PRIVATE -stdlib=libc++)
+        target_link_options(${target} PRIVATE -stdlib=libc++)
+    endif()
+endfunction()
+
+# Tests
 file(GLOB TEST_FILES ${CMAKE_SOURCE_DIR}/tests/*.cpp)
 foreach(test_file ${TEST_FILES})
     get_filename_component(test_name ${test_file} NAME_WE)
-    add_executable(${test_name} ${test_file})
-    set_target_properties(${test_name} PROPERTIES LINKER_LANGUAGE CUDA)
-    target_link_libraries(${test_name} lib c++ c++abi)
-    target_compile_options(${test_name} PRIVATE -Wall -Wextra -O2)
+    add_my_executable(${test_name} ${test_file})
 endforeach()
 
+# Experiments
 file(GLOB EXP_FILES ${CMAKE_SOURCE_DIR}/experiments/*.cpp)
 foreach(exp_file ${EXP_FILES})
     get_filename_component(exp_name ${exp_file} NAME_WE)
-    add_executable(${exp_name} ${exp_file})
-    set_target_properties(${exp_name} PROPERTIES LINKER_LANGUAGE CUDA)
-    target_link_libraries(${exp_name} lib c++ c++abi)
-    target_compile_options(${exp_name} PRIVATE -Wall -Wextra -O2)
-    # target_compile_options(${exp_name} PRIVATE -Wall -Wextra -O3 -Rpass=inline -Rpass-missed=inline)
+    add_my_executable(${exp_name} ${exp_file})
 endforeach()
 
-add_executable(main main.cpp)
-set_target_properties(main PROPERTIES LINKER_LANGUAGE CUDA)
-target_link_libraries(main lib c++ c++abi)
-target_compile_options(main PRIVATE -Wall -Wextra -O2)
+# Main
+add_my_executable(main ${CMAKE_SOURCE_DIR}/main.cpp)

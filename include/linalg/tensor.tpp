@@ -15,7 +15,6 @@ inline std::ostream& operator<<(std::ostream& os, const Range& t) {
 template <typename U>
 Tensor<U>::Tensor(const NestedInitializer& initializer, backend::BackendType type)
     : Tensor(initializer.shape, type) {
-    std::cout << "xx" << initializer.flatData.size() << std::endl;
     data_->write_flat(initializer.flatData);
 }
 
@@ -487,13 +486,8 @@ std::ostream& operator<<(std::ostream& os, const Tensor<U>& t) {
         os << static_cast<U>(t);
         return os;
     }
-    std::cout << "x" << std::endl;
     std::vector<U> strided = t.data_->read_strided(t.shape_, t.strides_, t.offset_);
-    if constexpr (std::is_same_v<U, bool>) {
-        std::cout << "bool" << std::endl;
-    }
-    std::cout << "b" << strided.size() << std::endl;
-    return os;
+
     for (size_t i = 0; i < t.shape_.size(); i++)
         os << "[";
     for (size_t i = 0; i < strided.size(); i++) {
