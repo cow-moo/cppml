@@ -98,6 +98,12 @@ int main() {
         std::cout << "Testing CPU multi thread backend" << std::endl;
         test();
     }
+    {
+        backend::BackendGuard guard(backend::BackendType::Cuda);
+        std::cout << "Testing Cuda backend" << std::endl;
+        test();
+    }
+
 
     return 0;
 }

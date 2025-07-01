@@ -3,6 +3,9 @@
 #include "backend/cpu_utils.hpp"
 #include <cuda_runtime.h>
 #include <vector>
+#include <bit>
+#include <cstddef>
+#include <limits>
 
 namespace backend {
 
@@ -12,7 +15,30 @@ using linalg::Strides;
 using ShapeArray = std::array<size_t, config::MAX_DIMS>;
 using StridesArray = std::array<size_t, config::MAX_DIMS>;
 
-constexpr int THREADS_PER_BLOCK = 256;
+constexpr size_t THREADS_PER_BLOCK = 256;
+constexpr size_t MAX_REDUCE_DIM = 1024;
+
+template <typename T>
+static constexpr T ceil_div(T a, T b) {
+    static_assert(std::is_integral_v<T>, "ceil_div requires integral types");
+    return (a + b - 1) / b;
+}
+
+constexpr size_t bit_ceil(size_t x) {
+    if (x <= 1) return 1;
+
+    // Find the position of the highest bit set
+    --x;
+    x |= x >> 1;
+    x |= x >> 2;
+    x |= x >> 4;
+    x |= x >> 8;
+    x |= x >> 16;
+#if SIZE_MAX > 0xFFFFFFFF
+    x |= x >> 32; // Needed for 64-bit size_t
+#endif
+    return x + 1;
+}
 
 __device__ size_t flat_to_data_idx(
     size_t flatIdx, 
@@ -102,7 +128,7 @@ static std::vector<T> read_strided_helper(const Shape& shape, const Strides& str
     T* strided;
     cudaMalloc(&strided, numel * sizeof(T));
     
-    int blocks = (numel + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+    int blocks = ceil_div(numel, THREADS_PER_BLOCK);
     read_strided_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(
         strided,
         data,
@@ -165,12 +191,6 @@ void CudaBuffer<T>::apply_binary(
     DeviceBuffer<V>* b, const Strides& bStrides, size_t bOffset,
     BinOp op) 
 {
-    assert(a->backend_type() == BackendType::Cuda &&
-           b->backend_type() == BackendType::Cuda);
-
-    U* aData = static_cast<CudaBuffer<U>*>(a)->data_;
-    V* bData = static_cast<CudaBuffer<V>*>(b)->data_;
-
     using Kernel = void(*)(size_t, size_t, const ShapeArray,
                           T*, const StridesArray, const size_t,
                           U*, const StridesArray, const size_t,
@@ -180,7 +200,7 @@ void CudaBuffer<T>::apply_binary(
                   T* rData, const StridesArray rStrides, const size_t rOffset,
                   U* aData, const StridesArray aStrides, const size_t aOffset,
                   V* bData, const StridesArray bStrides, const size_t bOffset) {
-            int blocks = (numel + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+            int blocks = ceil_div(numel, THREADS_PER_BLOCK);
             apply_binary_kernel<T, U, V, Op><<<blocks, THREADS_PER_BLOCK>>>(
                 numel, ndim, shape,
                 rData, rStrides, rOffset,
@@ -189,8 +209,13 @@ void CudaBuffer<T>::apply_binary(
             );
         };
     };
-
     static constexpr auto table = cpu_utils::make_kernel_table<BinOp>(lambda);
+
+    assert(a->backend_type() == BackendType::Cuda &&
+           b->backend_type() == BackendType::Cuda);
+
+    U* aData = static_cast<CudaBuffer<U>*>(a)->data_;
+    V* bData = static_cast<CudaBuffer<V>*>(b)->data_;
 
     table[static_cast<size_t>(op)](
         shape.numel(), shape.size(), shape.array(),
@@ -224,10 +249,6 @@ void CudaBuffer<T>::apply_binary(
     DeviceBuffer<U>* a, const Strides& aStrides, size_t aOffset,
     V b, BinOp op)
 {
-    assert(a->backend_type() == BackendType::Cuda);
-
-    U* aData = static_cast<CudaBuffer<U>*>(a)->data_;
-
     using Kernel = void(*)(size_t, size_t, const ShapeArray,
                           T*, const StridesArray, const size_t,
                           U*, const StridesArray, const size_t,
@@ -246,8 +267,11 @@ void CudaBuffer<T>::apply_binary(
             );
         };
     };
-
     static constexpr auto table = cpu_utils::make_kernel_table<BinOp>(lambda);
+
+    assert(a->backend_type() == BackendType::Cuda);
+
+    U* aData = static_cast<CudaBuffer<U>*>(a)->data_;
 
     table[static_cast<size_t>(op)](
         shape.numel(), shape.size(), shape.array(),
@@ -280,10 +304,6 @@ void CudaBuffer<T>::apply_unary(
     DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset,
     UnOp op)
 {
-    assert(other->backend_type() == BackendType::Cuda);
-
-    U* otherData = static_cast<CudaBuffer<U>*>(other)->data_;
-
     using Kernel = void(*)(size_t, size_t, const ShapeArray,
                           T*, const StridesArray, const size_t,
                           U*, const StridesArray, const size_t);
@@ -299,8 +319,11 @@ void CudaBuffer<T>::apply_unary(
             );
         };
     };
-
     static constexpr auto table = cpu_utils::make_kernel_table<UnOp>(lambda);
+
+    assert(other->backend_type() == BackendType::Cuda);
+
+    U* otherData = static_cast<CudaBuffer<U>*>(other)->data_;
 
     table[static_cast<size_t>(op)](
         shape.numel(), shape.size(), shape.array(),
@@ -309,13 +332,187 @@ void CudaBuffer<T>::apply_unary(
     );
 }
 
+template <typename T, size_t Op>
+__global__ void reduce_kernel_final(
+    const size_t rNdim, const ShapeArray rShape, 
+    T* rData, const StridesArray rStrides, const size_t rOffset,
+    const size_t reduceDim, const size_t otherNdim, const ShapeArray otherShape, 
+    T* otherData, const StridesArray otherStrides, const size_t otherOffset)
+{
+    __shared__ T sdata[MAX_REDUCE_DIM];
+
+    assert(reduceDim <= MAX_REDUCE_DIM);
+    assert(blockDim.x >= reduceDim);
+
+    size_t tid = threadIdx.x;
+
+    if (threadIdx.x < reduceDim) {
+        size_t otherFlatIdx = blockIdx.x * reduceDim + threadIdx.x;
+        size_t otherDataIdx = flat_to_data_idx(otherFlatIdx, otherNdim, otherShape, otherStrides, otherOffset);
+        sdata[tid] = otherData[otherDataIdx];
+    }
+    __syncthreads();
+
+    constexpr auto fn = cpu_utils::binop_table<T, T, T>[Op];
+    for (size_t s = blockDim.x >> 1; s > 0; s >>= 1) {
+        if (tid < s && tid + s < reduceDim)
+            sdata[tid] = fn(sdata[tid], sdata[tid + s]);
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        size_t rDataIdx = flat_to_data_idx(blockIdx.x, rNdim, rShape, rStrides, rOffset);
+        rData[rDataIdx] = sdata[0];
+    }
+}
+
+// Owns newData and assumes flat (default strides, 0 offset)
+// newShape[-1] is new reduce dim
+// curData guaranteed to share a prefix with newShape[:-1]
+template <typename T, size_t Op>
+__global__ void reduce_kernel_intermediate(
+    const size_t curNdim, const ShapeArray curShape,
+    const T* curData, const StridesArray curStrides, const size_t curOffset,
+    T* newData, const size_t curReduceDim, const size_t newReduceDim)
+{
+     __shared__ T sdata[MAX_REDUCE_DIM];
+
+    assert(blockDim.x == MAX_REDUCE_DIM);
+
+    size_t tid = threadIdx.x;
+    size_t bid = blockIdx.x;
+
+    size_t finalIdx = bid / newReduceDim;
+    size_t intermediateIdx = bid % newReduceDim;
+    // We can describe any position in newData (finalIdx, intermediateIdx)
+    // For each of these we want to reduce starting from curData (finalIdx, intermediateIdx * MAX_REDUCE_DIM)
+    // Up to MAX_REDUCE_DIM elements or until we hit a reduction boundary
+    // Each finalIdx corresponds to an index in final reduction
+    assert(curReduceDim > intermediateIdx * MAX_REDUCE_DIM);
+    size_t blockReduceDim = min(curReduceDim - intermediateIdx * MAX_REDUCE_DIM, MAX_REDUCE_DIM);
+    if (tid < blockReduceDim) {
+        size_t curFlatIdx = finalIdx * curReduceDim + intermediateIdx * MAX_REDUCE_DIM + tid;;
+        size_t curDataIdx = flat_to_data_idx(curFlatIdx, curNdim, curShape, curStrides, curOffset);
+        sdata[tid] = curData[curDataIdx];
+    }
+    __syncthreads();
+
+    constexpr auto fn = cpu_utils::binop_table<T, T, T>[Op];
+    for (size_t s = MAX_REDUCE_DIM >> 1; s > 0; s >>= 1) {
+        if (tid < s && tid + s < blockReduceDim)
+            sdata[tid] = fn(sdata[tid], sdata[tid + s]);
+        __syncthreads();
+    }
+
+    if (tid == 0) {
+        newData[bid] = sdata[0];
+    }
+}
+
 template <typename T>
 void CudaBuffer<T>::reduce(
     const Shape& rShape, const Strides& rStrides, size_t rOffset,
     const DeviceBuffer<T>* other, const Strides& otherStrides, size_t otherOffset,
     const Shape& reduceShape, T identity, BinOp op) 
 {
+    using KernelFinal = void(*)(const size_t, const ShapeArray, 
+                                T*, const StridesArray, const size_t,
+                                const size_t, const size_t, const ShapeArray, 
+                                T*, const StridesArray, const size_t,
+                                const size_t);
+    static constexpr auto lambda_final = []<size_t Op>() -> KernelFinal {
+        return [](const size_t rNdim, const ShapeArray rShape, 
+                  T* rData, const StridesArray rStrides, const size_t rOffset,
+                  const size_t reduceDim, const size_t otherNdim, const ShapeArray otherShape, 
+                  T* otherData, const StridesArray otherStrides, const size_t otherOffset,
+                  const size_t rNumel) {
+            reduce_kernel_final<T, Op><<<rNumel, bit_ceil(reduceDim)>>>(
+                rNdim, rShape,
+                rData, rStrides, rOffset,
+                reduceDim, otherNdim, otherShape,
+                otherData, otherStrides, otherOffset
+            );
+        };
+    };
+    static constexpr auto table_final = cpu_utils::make_kernel_table<BinOp>(lambda_final);
 
+    using KernelIntermediate = void(*)(const size_t, const ShapeArray,
+                                      const T*, const StridesArray, const size_t,
+                                      T*, const size_t, const size_t,
+                                      const size_t);
+    static constexpr auto lambda_intermediate = []<size_t Op>() -> KernelIntermediate {
+        return [](const size_t curNdim, const ShapeArray curShape,
+                  const T* curData, const StridesArray curStrides, const size_t curOffset,
+                  T* newData, const size_t curReduceDim, const size_t newReduceDim,
+                  const size_t newSize) {
+            reduce_kernel_intermediate<T, Op><<<newSize, MAX_REDUCE_DIM>>>(
+                curNdim, curShape,
+                curData, curStrides, curOffset,
+                newData, curReduceDim, newReduceDim
+            );
+        };
+    };
+    static constexpr auto table_intermediate = cpu_utils::make_kernel_table<BinOp>(lambda_intermediate);
+
+    assert(other->backend_type() == BackendType::Cuda);
+
+    T* otherData = static_cast<const CudaBuffer*>(other)->data_;
+    size_t rNumel = rShape.numel();
+
+    // Get full shape of other
+    Shape curShape(rShape);
+    for (auto dim : reduceShape)
+        curShape.push_back(dim);
+
+    size_t curNdim = curShape.size();
+    T* curData = otherData;
+    Strides curStrides = otherStrides;
+    size_t curOffset = otherOffset;
+    // Remaining dimension to reduce for intermediate sum
+    size_t curReduceDim = reduceShape.numel();
+
+    // Do intermediate reductions until remaining dimension to reduce fits in chunk size
+    while (curReduceDim > MAX_REDUCE_DIM) {
+        // Dimension to reduce to (>1 due to comparison in while loop)
+        size_t newReduceDim = ceil_div(curReduceDim, MAX_REDUCE_DIM);
+
+        // Intermediate sum allocation
+        size_t newSize = rNumel * newReduceDim;
+        T* newData;
+        cudaMalloc(&newData, newSize * sizeof(T));
+
+        // Dispatch kernel
+        table_intermediate[static_cast<size_t>(op)](
+            curNdim, curShape.array(),
+            curData, curStrides.array(), curOffset,
+            newData, curReduceDim, newReduceDim,
+            newSize
+        );
+
+        // Free curData if it was allocated
+        if (curData != otherData)
+            cudaFree(curData);
+        
+        // Update cur
+        curNdim = rShape.size() + 1;
+        curShape = rShape;
+        curShape.push_back(newReduceDim);
+        curData = newData;
+        curStrides = Strides(curShape);
+        curOffset = 0;
+        curReduceDim = newReduceDim;
+    }
+
+    table_final[static_cast<size_t>(op)](
+        rShape.size(), rShape.array(),
+        data_, rStrides.array(), rOffset,
+        curReduceDim, curNdim, curShape.array(),
+        curData, curStrides.array(), curOffset,
+        rNumel
+    );
+
+    if (curData != otherData)
+        cudaFree(curData);
 }
 
 template <typename T>

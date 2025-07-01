@@ -19,7 +19,12 @@ using linalg::Shape;
 int main() {
     Tensor<> multi = Tensor<>::normal({10, 1000000}, backend::BackendType::CpuMultiThread);
     Tensor<> single = multi.to(backend::BackendType::CpuSingleThread);
+    Tensor<> cuda = multi.to(backend::BackendType::Cuda);
 
-    multi.sum({1}).print();
-    single.sum({1}).print();
+    multi.max({1}).print();
+    single.max({1}).print();
+    cuda.max({1}).print();
+
+    // Tensor<> t({1, 2, 3}, backend::BackendType::Cuda);
+    // t.sum().print();
 }
