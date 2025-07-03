@@ -23,15 +23,18 @@ int main() {
 
     {
         timing::ScopedTimer timer("multi");
-        multi.sum({1}).print();
+        // multi.sum({1}).print();
+        multi.argmax().print();
     }
     {
         timing::ScopedTimer timer("single");
-        single.sum({1}).print();
+        // single.sum({1}).print();
+        single.argmax().print();
     }
     {
         timing::ScopedTimer timer("cuda");
-        cuda.sum({1}).print();
+        // cuda.sum({1}).print();
+        cuda.argmax().print();
     }
 
     // Tensor<> t({1, 2, 3}, backend::BackendType::Cuda);

@@ -421,7 +421,7 @@ void CudaBuffer<T>::reduce(
                            const T*, const size_t,
                            const ShapeArray, const StridesArray, const size_t,
                            const size_t);
-    static constexpr auto lambda_intermediate = []<size_t Op>() -> Kernel {
+    static constexpr auto lambda = []<size_t Op>() -> Kernel {
         return [](T* newData, const size_t newReduceDim,
                   const T* curData, const size_t curNdim,
                   const ShapeArray curShape, const StridesArray curStrides, const size_t curOffset,
@@ -474,7 +474,7 @@ void CudaBuffer<T>::reduce(
         cudaMalloc(&newData, newSize * sizeof(T));
 
         // Dispatch kernel
-        table_intermediate[static_cast<size_t>(op)](
+        table[static_cast<size_t>(op)](
             newData, newReduceDim,
             curData, curNdim,
             curShape.array(), curStrides.array(), curOffset,
@@ -506,38 +506,67 @@ void CudaBuffer<T>::reduce(
         cudaFree(curData);
 }
 
-// template <typename T, size_t Op>
-// __global__ void arg_reduce_kernel(
-//     const size_t rNdim, const ShapeArray rShape, size_t* rIdxs,
-//     const size_t reduceDim, const size_t otherNdim, const ShapeArray otherShape, 
-//     T* otherData, const StridesArray otherStrides, const size_t otherOffset)
-// {
-//     __shared__ T sdata[MAX_REDUCE_DIM];
+// Owns newData and assumes flat (default strides, 0 offset)
+// newShape[-1] is new reduce dim
+// curData guaranteed to share a prefix with newShape[:-1]
+// if curIdxs == nullptr then assume default strides
+// if newData == nullptr then don't write
+template <typename T, size_t Op>
+__global__ void arg_reduce_kernel(
+    T* newData, size_t* newIdxs, const size_t newReduceDim,
+    const T* curData, const size_t* curIdxs, const size_t curNdim,
+    const ShapeArray curShape, const StridesArray curStrides, const size_t curOffset,
+    const size_t curReduceDim)
+{
+    // Trying to use extern dynamic sizing leads to some symbol collision
+    // from the explicit instantiation of CudaBuffer
+    __shared__ T sdata[MAX_REDUCE_DIM];
+    __shared__ size_t sidxs[MAX_REDUCE_DIM];
 
-//     assert(reduceDim <= MAX_REDUCE_DIM);
-//     assert(blockDim.x >= reduceDim);
+    size_t tid = threadIdx.x;
+    size_t bid = blockIdx.x;
+    size_t bdim = blockDim.x;
 
-//     size_t tid = threadIdx.x;
+    size_t finalIdx = bid / newReduceDim;
+    size_t intermediateIdx = bid % newReduceDim;
+    // We can describe any position in newData (finalIdx, intermediateIdx)
+    // For each of these we want to reduce starting from curData (finalIdx, intermediateIdx * bdim)
+    // Up to bdim elements or until we hit a reduction boundary
+    // Each finalIdx corresponds to an index in final reduction
+    assert(curReduceDim > intermediateIdx * bdim);
+    size_t blockReduceDim = min(curReduceDim - intermediateIdx * bdim, bdim);
+    if (tid < blockReduceDim) {
+        size_t curFlatIdx = finalIdx * curReduceDim + intermediateIdx * bdim + tid;
+        size_t curDataIdx = flat_to_data_idx(curFlatIdx, curNdim, curShape, curStrides, curOffset);
+        sdata[tid] = curData[curDataIdx];
+        sidxs[tid] = curIdxs == nullptr ? intermediateIdx * bdim + tid : curIdxs[curDataIdx];
+    }
+    __syncthreads();
 
-//     if (threadIdx.x < reduceDim) {
-//         size_t otherFlatIdx = blockIdx.x * reduceDim + threadIdx.x;
-//         size_t otherDataIdx = flat_to_data_idx(otherFlatIdx, otherNdim, otherShape, otherStrides, otherOffset);
-//         sdata[tid] = otherData[otherDataIdx];
-//     }
-//     __syncthreads();
+    for (size_t s = bdim >> 1; s > 0; s >>= 1) {
+        if (tid < s && tid + s < blockReduceDim) {
+            if constexpr (Op == static_cast<size_t>(ArgRedOp::Max)) {
+                if (sdata[tid] < sdata[tid + s]) {
+                    sdata[tid] = sdata[tid + s];
+                    sidxs[tid] = sidxs[tid + s];
+                }
+            }
+            else {
+                if (sdata[tid] > sdata[tid + s]) {
+                    sdata[tid] = sdata[tid + s];
+                    sidxs[tid] = sidxs[tid + s];
+                }
+            }
+        }
+        __syncthreads();
+    }
 
-//     constexpr auto fn = cpu_utils::binop_table<T, T, T>[Op];
-//     for (size_t s = blockDim.x >> 1; s > 0; s >>= 1) {
-//         if (tid < s && tid + s < reduceDim)
-//             sdata[tid] = fn(sdata[tid], sdata[tid + s]);
-//         __syncthreads();
-//     }
-
-//     if (tid == 0) {
-//         size_t rDataIdx = flat_to_data_idx(blockIdx.x, rNdim, rShape, rStrides, rOffset);
-//         rData[rDataIdx] = sdata[0];
-//     }
-// }
+    if (tid == 0) {
+        if (newData != nullptr)
+            newData[bid] = sdata[0];
+        newIdxs[bid] = sidxs[0];
+    }
+}
 
 template <typename T>
 template <typename U>
@@ -546,7 +575,102 @@ void CudaBuffer<T>::arg_reduce(
     const DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset,
     size_t reduceDim, ArgRedOp op)
 {
+    static_assert(std::is_same_v<T, size_t>, "arg_reduce only works with T = size_t");
 
+    using Kernel = void(*)(U*, size_t*, const size_t,
+                           const U*, const size_t*, const size_t,
+                           const ShapeArray, const StridesArray, const size_t,
+                           const size_t);
+    static constexpr auto lambda = []<size_t Op>() -> Kernel {
+        return [](U* newData, size_t* newIdxs, const size_t newReduceDim,
+                  const U* curData, const size_t* curIdxs, const size_t curNdim,
+                  const ShapeArray curShape, const StridesArray curStrides, const size_t curOffset,
+                  const size_t curReduceDim) {
+            size_t newSize = newReduceDim;
+            for (size_t i = 0; i < curNdim; ++i)
+                newSize *= curShape[i];
+            newSize /= curReduceDim;
+
+            size_t bdim = bit_ceil(ceil_div(curReduceDim, newReduceDim));
+            assert(bdim <= MAX_REDUCE_DIM);
+            // newReduceDim != 1 implies bdim == MAX_REDUCE_DIM
+            assert(newReduceDim == 1 || bdim == MAX_REDUCE_DIM);
+
+            arg_reduce_kernel<U, Op><<<newSize, bdim>>>(
+                newData, newIdxs, newReduceDim,
+                curData, curIdxs, curNdim,
+                curShape, curStrides, curOffset,
+                curReduceDim
+            );
+        };
+    };
+    static constexpr auto table = cpu_utils::make_kernel_table<ArgRedOp>(lambda);
+
+    assert(other->backend_type() == BackendType::Cuda);
+
+    U* otherData = static_cast<const CudaBuffer<U>*>(other)->data_;
+    size_t rNumel = rShape.numel();
+
+    // Get full shape of other
+    Shape curShape(rShape);
+    curShape.push_back(reduceDim);
+
+    size_t curNdim = curShape.size();
+    U* curData = otherData;
+    size_t* curIdxs = nullptr;
+    Strides curStrides = otherStrides;
+    size_t curOffset = otherOffset;
+    // Remaining dimension to reduce for intermediate sum
+    size_t curReduceDim = reduceDim;
+
+    // Do intermediate reductions until remaining dimension to reduce fits in chunk size
+    while (curReduceDim > MAX_REDUCE_DIM) {
+        // Dimension to reduce to (>1 due to comparison in while loop)
+        size_t newReduceDim = ceil_div(curReduceDim, MAX_REDUCE_DIM);
+
+        // Intermediate sum allocation
+        size_t newSize = rNumel * newReduceDim;
+        U* newData;
+        size_t* newIdxs;
+        cudaMalloc(&newData, newSize * sizeof(U));
+        cudaMalloc(&newIdxs, newSize * sizeof(size_t));
+
+        // Dispatch kernel
+        table[static_cast<size_t>(op)](
+            newData, newIdxs, newReduceDim,
+            curData, curIdxs, curNdim,
+            curShape.array(), curStrides.array(), curOffset,
+            curReduceDim
+        );
+
+        // Free curData if it was allocated
+        if (curData != otherData) {
+            cudaFree(curData);
+            cudaFree(curIdxs);
+        }
+        
+        // Update cur
+        curNdim = rShape.size() + 1;
+        curShape = rShape;
+        curShape.push_back(newReduceDim);
+        curData = newData;
+        curIdxs = newIdxs;
+        curStrides = Strides(curShape);
+        curOffset = 0;
+        curReduceDim = newReduceDim;
+    }
+
+    table[static_cast<size_t>(op)](
+        nullptr, data_, 1,
+        curData, curIdxs, curNdim,
+        curShape.array(), curStrides.array(), curOffset,
+        curReduceDim
+    );
+
+    if (curData != otherData) {
+        cudaFree(curData);
+        cudaFree(curIdxs);
+    }
 }
 
 template <typename T>
