@@ -100,11 +100,13 @@ public:
 
     // Reduce on last k dimensions (implied by reduceShape)
     // otherShape = rShape + reduceShape
+    // Consider removing rStrides, rOffset, and enforcing a fresh/flat *this
     virtual void reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
                 const DeviceBuffer* other, const Strides& otherStrides, size_t otherOffset,
                 const Shape& reduceShape, T identity, BinOp op) = 0;
 
     // Reduce on last dimension
+    // Consider removing rStrides, rOffset, and enforcing a fresh/flat *this
     template <typename U>
     void arg_reduce(const Shape& rShape, const Strides& rStrides, size_t rOffset,
                     const DeviceBuffer<U>* other, const Strides& otherStrides, size_t otherOffset,
@@ -113,6 +115,7 @@ public:
         BACKEND_DISPATCH(arg_reduce(rShape, rStrides, rOffset, other, otherStrides, otherOffset, reduceDim, op));
     }
 
+    // Consider removing rStrides, rOffset, and enforcing a fresh/flat *this
     virtual void matmul(const Shape& rShape, const Strides& rStrides, size_t rOffset,
                 const DeviceBuffer<T>* a, const Strides& aStrides, size_t aOffset,
                 const DeviceBuffer<T>* b, const Strides& bStrides, size_t bOffset,

@@ -19,12 +19,15 @@ bool MNISTDataset::load_images(const std::string& path) {
     uint32_t cols = read_uint32(file);
 
     assert(magic == 2051 && rows == 28 && cols == 28);
+    std::cout << num_images << std::endl;
 
     std::vector<uint8_t> flat(28 * 28);
     images.reserve(num_images);
     for (uint32_t i = 0; i < num_images; ++i) {
         file.read(reinterpret_cast<char*>(flat.data()), 28 * 28);
         images.emplace_back(Tensor<uint8_t>(flat).astype<float>() / 255.0f);
+        if (i % 10000 == 0)
+            std::cout << i << std::endl;
     }
 
     return true;

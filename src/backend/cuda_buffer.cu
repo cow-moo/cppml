@@ -673,6 +673,122 @@ void CudaBuffer<T>::arg_reduce(
     }
 }
 
+constexpr size_t BM = 64;
+constexpr size_t BN = 64;
+constexpr size_t BK = 32;
+
+constexpr size_t TM = 4;
+constexpr size_t TN = 4;
+
+constexpr size_t NTHREADS = BM * BN / TM / TN;
+
+static_assert(NTHREADS % BK == 0);
+constexpr size_t A_STRIDE_INNER = NTHREADS / BK;
+static_assert(NTHREADS % BN == 0);
+constexpr size_t B_STRIDE_INNER = NTHREADS / BN;
+
+// BS * M * K
+// BS * K * N
+// BS * M * N
+// BS * ceil_div(M, TM) * ceil_div(N, TN)
+// BS * ceil_div(M, BM) * ceil_div(N, BN) blocks
+// 1 * (BM / TM) * (BN / TN) threads per block
+// z, x, y
+template <typename T>
+__global__ void matmul_kernel(
+    const size_t ndim, const ShapeArray batchShape, 
+    const size_t m, const size_t n, const size_t k,
+    T* rData, const StridesArray rStrides, const size_t rOffset,
+    const T* aData, const StridesArray aStrides, const size_t aOffset,
+    const T* bData, const StridesArray bStrides, const size_t bOffset)
+{
+    __shared__ T sa[BM * BK];
+    __shared__ T sb[BK * BN];
+
+    size_t batchIdx = blockIdx.z;
+    size_t rBatchOffset = flat_to_data_idx(batchIdx, ndim, batchShape, rStrides, rOffset);
+    size_t aBatchOffset = flat_to_data_idx(batchIdx, ndim, batchShape, aStrides, aOffset);
+    size_t bBatchOffset = flat_to_data_idx(batchIdx, ndim, batchShape, bStrides, bOffset);
+
+    size_t tid = threadIdx.x + threadIdx.y * blockDim.x;
+
+    size_t aIdxM = blockIdx.x * BM + tid / BK;
+    size_t aIdxK = tid % BK;
+
+    size_t bIdxK = tid / BN;
+    size_t bIdxN = blockIdx.y * BN + tid % BN;
+
+    size_t rIdxM = threadIdx.x * TM + blockIdx.x * BM;
+    size_t rIdxN = threadIdx.y * TN + blockIdx.y * BN;
+
+    size_t tm = min(TM, m > rIdxM ? m - rIdxM : 0);
+    size_t tn = min(TN, n > rIdxN ? n - rIdxN : 0);
+
+    T res[TM * TN] = {0};
+    T aReg[TM], bReg[TN];
+
+    // Outer loop
+    for (size_t kIdx = 0; kIdx < k; kIdx += BK) {
+        // Load SMEM
+        if (aIdxK < k) {
+            for (size_t i = 0; i < BM * BK / NTHREADS; ++i) {
+                if (aIdxM + i * A_STRIDE_INNER < m) {
+                    sa[i * NTHREADS + tid] = 
+                        aData[aBatchOffset + 
+                              (aIdxM + i * A_STRIDE_INNER) * aStrides[ndim] +
+                              aIdxK * aStrides[ndim + 1]];
+                }
+            }
+        }
+
+        if (bIdxN < n) {
+            for (size_t i = 0; i < BK * BN / NTHREADS; ++i) {
+                if (bIdxK + i * B_STRIDE_INNER < k) {
+                    sb[i * NTHREADS + tid] =
+                        bData[bBatchOffset +
+                              (bIdxK + i * B_STRIDE_INNER) * bStrides[ndim] +
+                              bIdxN * bStrides[ndim + 1]];
+                }
+            }
+        }
+
+        __syncthreads();
+
+        aIdxK += BK;
+        bIdxK += BK;
+
+        // Inner loop
+        for (size_t i = 0; i < min(BK, k - kIdx); ++i) {
+            // Load regs
+            for (size_t j = 0; j < tm; ++j) {
+                aReg[j] = sa[i + (j + threadIdx.x * TM) * BK];
+            }
+
+            for (size_t k = 0; k < tn; ++k) {
+                bReg[k] = sb[k + threadIdx.y * TN + i * BN];
+            }
+
+            // Outer product
+            for (size_t j = 0; j < tm; ++j) {
+                for (size_t k = 0; k < tn; ++k) {
+                    res[k + j * TN] += aReg[j] * bReg[k];
+                }
+            }
+        }
+
+        __syncthreads();
+    }
+
+    size_t rThreadOffset = rBatchOffset + rIdxM * rStrides[ndim] + rIdxN * rStrides[ndim + 1];
+
+    // Write results
+    for (size_t j = 0; j < tm; ++j) {
+        for (size_t k = 0; k < tn; ++k) {
+            rData[rThreadOffset + j * rStrides[ndim] + k * rStrides[ndim + 1]] = res[k + j * TN];
+        }
+    }
+}
+
 template <typename T>
 void CudaBuffer<T>::matmul(
     const Shape& rShape, const Strides& rStrides, size_t rOffset,
@@ -680,9 +796,45 @@ void CudaBuffer<T>::matmul(
     const DeviceBuffer<T>* b, const Strides& bStrides, size_t bOffset,
     size_t innerDim)
 {
+    Shape batchShape = rShape;
+    batchShape.pop_back(); batchShape.pop_back();
+    size_t m = rShape[-2];
+    size_t n = rShape[-1];
 
+    assert(a->backend_type() == BackendType::Cuda &&
+           b->backend_type() == BackendType::Cuda);
+
+    const T* aData = static_cast<const CudaBuffer*>(a)->data_;
+    const T* bData = static_cast<const CudaBuffer*>(b)->data_;
+
+    constexpr dim3 blockDim(BM / TM, BN / TN, 1);
+    dim3 gridDim(ceil_div(m, BM), ceil_div(n, BN), batchShape.numel());
+    matmul_kernel<T><<<gridDim, blockDim>>>(
+        batchShape.size(), batchShape.array(),
+        m, n, innerDim,
+        data_, rStrides.array(), rOffset,
+        aData, aStrides.array(), aOffset,
+        bData, bStrides.array(), bOffset
+    );
 }
 
 #include "cuda_buffer_inst.inc"
 
 }
+
+    // size_t aBlockOffset = blockDim.x * BM * aStrides[ndim];
+    // size_t bBlockOffset = blockDim.y * BN * bStrides[ndim + 1];
+
+    // size_t aThreadOffset = tid / BK * aStrides[ndim] + tid % BK * aStrides[ndim + 1];
+    // size_t bThreadOffset = tid / BN * bStrides[ndim] + tid % BN * bStrides[ndim + 1];
+
+    // size_t aStrideOuter = BK * aStrides[ndim + 1];
+    // size_t aStrideInner = NTHREADS / BK * aStrides[ndim];
+    // static_assert(NTHREADS % BK == 0);
+
+    // size_t bStrideOuter = BK * bStrides[ndim];
+    // size_t bStrideInner = NTHREADS / BN * bStrides[ndim];
+    // static_assert(NTHREADS % BN == 0);
+
+    // size_t aIdx = aBatchOffset + aBlockOffset + aThreadOffset;
+    // size_t bIdx = bBatchOffset + bBlockOffset + bThreadOffset;

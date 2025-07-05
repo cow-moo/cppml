@@ -12,11 +12,13 @@ using linalg::Shape;
 using autodiff::Expression;
 
 int main() {
-    backend::BackendGuard guard(backend::BackendType::CpuMultiThread);
+    backend::BackendGuard guard(backend::BackendType::Cuda);
 
     dataloader::MNISTDataset train;
     assert(train.load_images("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte"));
+    std::cout << "train images loaded" << std::endl;
     assert(train.load_labels("../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte"));
+    std::cout << "train labels loaded" << std::endl;
 
     //dataloader::MNISTDataset::print_img(train.get(0).first);
 
