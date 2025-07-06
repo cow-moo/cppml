@@ -345,6 +345,24 @@ Tensor<U> Tensor<U>::matmul(const Tensor& other) const {
         return res;
 }
 
+/* ===== Misc Operations ===== */
+template <typename U>
+Tensor<U> Tensor<U>::gather(const Tensor<size_t>& idxs) const {
+    assert(data_->backend_type() == idxs.data_->backend_type());
+    if (idxs.shape().size() != shape().size())
+        throw std::invalid_argument("idxs should have same number of dimensions");
+    for (size_t i = 0; i < idxs.shape().size() - 1; ++i) {
+        if (idxs.shape()[i] != shape()[i])
+            throw std::invalid_argument("invalid shape for gather");
+    }
+    assert(idxs.shape()[-1] == 1);
+    Tensor<U> res(idxs.shape(), data_->backend_type());
+    res.data_->gather(idxs.shape(), shape()[-1],
+                      data_.get(), strides_, offset_,
+                      idxs.data_.get(), idxs.strides_, idxs.offset_);
+    return res;
+}
+
 /* ===== Manipulations ===== */
 
 template <typename U>

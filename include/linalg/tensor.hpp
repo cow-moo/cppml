@@ -138,6 +138,10 @@ public:
     /* ===== Linear Algebra ===== */
     Tensor matmul(const Tensor& other) const;
 
+    /* ===== Misc Operations ===== */
+    // TODO: Add axis parameter
+    Tensor gather(const Tensor<size_t>& idxs) const;
+
     /* ===== Manipulations ===== */
     Tensor reshape(const Shape& newShape) const;
     Tensor unsqueeze(int axis) const;

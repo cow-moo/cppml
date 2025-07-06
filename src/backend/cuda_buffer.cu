@@ -172,12 +172,12 @@ __global__ void apply_binary_kernel(
     U* aData, const StridesArray aStrides, const size_t aOffset,
     V* bData, const StridesArray bStrides, const size_t bOffset)
 {
-    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= numel) return;
+    size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= numel) return;
 
-    size_t rIdx = flat_to_data_idx(idx, ndim, shape, rStrides, rOffset);
-    size_t aIdx = flat_to_data_idx(idx, ndim, shape, aStrides, aOffset);
-    size_t bIdx = flat_to_data_idx(idx, ndim, shape, bStrides, bOffset);
+    size_t rIdx = flat_to_data_idx(tid, ndim, shape, rStrides, rOffset);
+    size_t aIdx = flat_to_data_idx(tid, ndim, shape, aStrides, aOffset);
+    size_t bIdx = flat_to_data_idx(tid, ndim, shape, bStrides, bOffset);
 
     constexpr auto fn = cpu_utils::binop_table<T, U, V>[Op];
     rData[rIdx] = fn(aData[aIdx], bData[bIdx]);
@@ -813,6 +813,46 @@ void CudaBuffer<T>::matmul(
         batchShape.size(), batchShape.array(),
         m, n, innerDim,
         data_, rStrides.array(), rOffset,
+        aData, aStrides.array(), aOffset,
+        bData, bStrides.array(), bOffset
+    );
+}
+
+template <typename T>
+__global__ void gather_kernel(
+    size_t numel, size_t ndim, const ShapeArray shape, const size_t gatherDim,
+    T* rData,
+    T* aData, const StridesArray aStrides, const size_t aOffset,
+    size_t* bData, const StridesArray bStrides, const size_t bOffset)
+{
+    size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= numel) return;
+
+    size_t rIdx = tid;
+    size_t aIdx = flat_to_data_idx(tid, ndim, shape, aStrides, aOffset);
+    size_t bIdx = flat_to_data_idx(tid, ndim, shape, bStrides, bOffset);
+
+    size_t idx = bData[bIdx];
+    assert(idx < gatherDim);
+    rData[rIdx] = aData[aIdx + idx * aStrides[ndim - 1]];
+}
+
+template <typename T>
+void CudaBuffer<T>::gather(
+    const Shape& rShape, const size_t gatherDim,
+    const DeviceBuffer<T>* a, const Strides& aStrides, size_t aOffset,
+    const DeviceBuffer<size_t>* b, const Strides& bStrides, size_t bOffset)
+{
+    assert(a->backend_type() == BackendType::Cuda &&
+           b->backend_type() == BackendType::Cuda);
+
+    T* aData = static_cast<const CudaBuffer*>(a)->data_;
+    size_t* bData = static_cast<const CudaBuffer<size_t>*>(b)->data_;
+
+    int blocks = ceil_div(rShape.numel(), THREADS_PER_BLOCK);
+    gather_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(
+        rShape.numel(), rShape.size(), rShape.array(), gatherDim,
+        data_,
         aData, aStrides.array(), aOffset,
         bData, bStrides.array(), bOffset
     );

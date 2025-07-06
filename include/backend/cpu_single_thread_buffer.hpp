@@ -218,6 +218,26 @@ public:
         }
     }
 
+    void gather(const Shape& rShape, const size_t gatherDim,
+                const DeviceBuffer<T>* a, const Strides& aStrides, size_t aOffset,
+                const DeviceBuffer<size_t>* b, const Strides& bStrides, size_t bOffset) override {
+        assert(a->backend_type() == BackendType::CpuSingleThread &&
+               b->backend_type() == BackendType::CpuSingleThread);
+
+        T* aData = static_cast<const CpuSingleThreadBuffer*>(a)->data_;
+        size_t* bData = static_cast<const CpuSingleThreadBuffer<size_t>*>(b)->data_;
+
+        auto rIt = cpu_utils::StridedIterator<T>(data_, rShape, Strides(rShape), 0);
+        auto aIt = cpu_utils::StridedIterator<T>(aData, rShape, aStrides, aOffset);
+        auto bIt = cpu_utils::StridedIterator<size_t>(bData, rShape, bStrides, bOffset);
+
+        for (size_t i = 0; i < rShape.numel(); ++i) {
+            assert(*bIt < gatherDim);
+            *rIt = aData[aIt.dataIdx + *bIt * aStrides[-1]];
+            ++rIt; ++aIt; ++bIt;
+        }
+    }
+
     T& operator[](size_t i) {
         return data_[i];
     }

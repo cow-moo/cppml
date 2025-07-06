@@ -56,21 +56,20 @@ int main() {
     // cuda.max({1, 2}).print();
     // cuda.min({1, 2}).print();
 
-    backend::BackendGuard guard(backend::BackendType::Cuda);
-    data::MNISTDataset train("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte", 
-                             "../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte");
+    // backend::BackendGuard guard(backend::BackendType::Cuda);
+    // data::MNISTDataset train("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte", 
+    //                          "../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte");
     
-    std::cout << "Dataset ready" << std::endl;
-    data::DataLoader dl(std::move(train), 64);
-    dl.shuffle();
-    auto it = dl.begin();
-    //data::MNISTDataset::print_img(std::get<0>(*it)[1]);
-    std::get<1>(*it).print();
-    // dataloader::
-    //dataloader::MNISTDataset train;
-    //assert(train.load_images("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte"));
-    // Tensor<> t;
-    // t.print();
-    // t.assign(Tensor<>::normal({3, 3}));
-    // t.print();
+    // std::cout << "Dataset ready" << std::endl;
+    // data::DataLoader dl(std::move(train), 64);
+    // dl.shuffle();
+    // auto it = dl.begin();
+    // std::get<1>(*it).print();
+
+    backend::BackendGuard guard(backend::BackendType::Cuda);
+    Tensor<> a({{1, 2, 3}, {4, 5, 6}, {7, 8, 9}});
+    Tensor<size_t> b({0, 0, 2});
+    b.assign(b.unsqueeze(1));
+    b.print();
+    a.gather(b).print();
 }

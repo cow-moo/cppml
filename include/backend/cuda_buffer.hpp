@@ -58,6 +58,10 @@ public:
                 const DeviceBuffer<T>* b, const Strides& bStrides, size_t bOffset,
                 size_t innerDim) override;
 
+    void gather(const Shape& rShape, const size_t gatherDim,
+                const DeviceBuffer<T>* a, const Strides& aStrides, size_t aOffset,
+                const DeviceBuffer<size_t>* b, const Strides& bStrides, size_t bOffset) override;
+
 private:
     size_t size_;
     T* data_;

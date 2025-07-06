@@ -71,6 +71,8 @@ public:
     Expression softmax() const;
     Expression log_softmax() const;
 
+    // Expression gather(const Tensor<T>& idxs) const;
+
     void print() const;
 
 private:
