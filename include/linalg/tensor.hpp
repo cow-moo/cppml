@@ -33,6 +33,7 @@ public:
     struct NestedInitializer;
 
     /* ===== Constructors & assignment ===== */
+    Tensor(backend::BackendType type = backend::current_backend_type);
     Tensor(const NestedInitializer& initializer, backend::BackendType type = backend::current_backend_type);
     Tensor(const Shape& shape, backend::BackendType type = backend::current_backend_type);
     Tensor(const std::initializer_list<U>& list, backend::BackendType type = backend::current_backend_type);

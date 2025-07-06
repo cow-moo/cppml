@@ -1,4 +1,5 @@
 #include "tensor.hpp"
+#include "timing.hpp"
 
 namespace linalg {
 
@@ -10,6 +11,9 @@ inline std::ostream& operator<<(std::ostream& os, const Range& t) {
     os << "Range(" << t.start << ", " << t.length << ", " << t.step << ")";
     return os;
 }
+
+template <typename U>
+Tensor<U>::Tensor(backend::BackendType type) : Tensor(Shape{0}, type) {}
 
 // Tensor constructor from NestedInitializer
 template <typename U>
@@ -85,9 +89,10 @@ Tensor<U> Tensor<U>::normal(const Shape& shape, backend::BackendType type) {
 
 template <typename U>
 Tensor<U> Tensor<U>::copy() const {
-    Tensor res = zeros(shape_);
-    res += *this;
-    return res;
+    return apply_unary(backend::UnOp::Pass);
+    // Tensor res = zeros(shape_);
+    // res += *this;
+    // return res;
 }
 
 template <typename U>
@@ -465,6 +470,8 @@ Tensor<R> Tensor<U>::astype() const {
 
 template <typename U>
 Tensor<U> Tensor<U>::to(backend::BackendType type) const {
+    if (type == data_->backend_type())
+        return *this;
     Tensor res(shape_, type);
     res.data_->write_flat(data_->read_strided(shape_, strides_, offset_));
     return res;
@@ -482,8 +489,15 @@ Tensor<U>::operator U() const {
 
 template <typename U>
 std::ostream& operator<<(std::ostream& os, const Tensor<U>& t) {
+    // Needed to prevent int8 types from appearing like char
+    using PrintType = std::conditional_t<
+        std::is_same_v<U, uint8_t> || std::is_same_v<U, int8_t>,
+        int,
+        U
+    >;
+
     if (t.shape_.size() == 0) {
-        os << static_cast<U>(t);
+        os << static_cast<PrintType>(t);
         return os;
     }
     std::vector<U> strided = t.data_->read_strided(t.shape_, t.strides_, t.offset_);
@@ -505,7 +519,7 @@ std::ostream& operator<<(std::ostream& os, const Tensor<U>& t) {
             for (size_t j = 0; j < depth; j++)
                 os << "[";
         }
-        os << static_cast<U>(strided[i]);
+        os << static_cast<PrintType>(strided[i]);
     }
     for (size_t i = 0; i < t.shape_.size(); i++)
         os << "]";

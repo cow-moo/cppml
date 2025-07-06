@@ -3,7 +3,7 @@
 //#include "autodiff.hpp"
 //#include "module.hpp"
 //#include "solver.hpp"
-//#include "dataloader.hpp"
+#include "data.hpp"
 //#include "loss.hpp"
 #include "backend.hpp"
 #include "timing.hpp"
@@ -37,25 +37,40 @@ int main() {
     //     cuda.argmax().print();
     // }
 
-    Tensor<> multi = Tensor<>::normal({10, 1000, 1000}, backend::BackendType::CpuMultiThread);
-    Tensor<> cuda = multi.to(backend::BackendType::Cuda);
+    // Tensor<> multi = Tensor<>::normal({10, 1000, 1000}, backend::BackendType::CpuMultiThread);
+    // Tensor<> cuda({0});
+    // {
+    //     timing::ScopedTimer timer("assign");
+    //     cuda.assign(multi.to(backend::BackendType::Cuda));
+    // }
 
-    {
-        timing::ScopedTimer timer("multi");
-        multi.assign(matmul(multi, multi));
-    }
-    {
-        timing::ScopedTimer timer("cuda");
-        cuda.assign(matmul(cuda, cuda));
-    }
-    cuda.assign(multi.to(backend::BackendType::Cuda) - cuda);
-    cuda.max({1, 2}).print();
-    cuda.min({1, 2}).print();
-    // cuda.assign(cuda * cuda);
-    // cuda.sum().print();
-    // cuda.max().print();
-    //(multi.to(backend::BackendType::Cuda) - cuda).sum().print();
+    // {
+    //     timing::ScopedTimer timer("multi");
+    //     multi.assign(matmul(multi, multi));
+    // }
+    // {
+    //     timing::ScopedTimer timer("cuda");
+    //     cuda.assign(matmul(cuda, cuda));
+    // }
+    // cuda.assign(multi.to(backend::BackendType::Cuda) - cuda);
+    // cuda.max({1, 2}).print();
+    // cuda.min({1, 2}).print();
 
-    // Tensor<> cuda({{1, 2, 3}, {2, 3, 4}, {3, 4, 5}}, backend::BackendType::Cuda);
-    // matmul(cuda, cuda).print();
+    backend::BackendGuard guard(backend::BackendType::Cuda);
+    data::MNISTDataset train("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte", 
+                             "../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte");
+    
+    std::cout << "Dataset ready" << std::endl;
+    data::DataLoader dl(std::move(train), 64);
+    dl.shuffle();
+    auto it = dl.begin();
+    //data::MNISTDataset::print_img(std::get<0>(*it)[1]);
+    std::get<1>(*it).print();
+    // dataloader::
+    //dataloader::MNISTDataset train;
+    //assert(train.load_images("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte"));
+    // Tensor<> t;
+    // t.print();
+    // t.assign(Tensor<>::normal({3, 3}));
+    // t.print();
 }

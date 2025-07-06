@@ -1,5 +1,5 @@
 #include <iostream>
-#include "dataloader.hpp"
+#include "data.hpp"
 #include "linalg.hpp"
 #include "autodiff.hpp"
 #include "module.hpp"
@@ -14,33 +14,29 @@ using autodiff::Expression;
 int main() {
     backend::BackendGuard guard(backend::BackendType::Cuda);
 
-    dataloader::MNISTDataset train;
-    assert(train.load_images("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte"));
-    std::cout << "train images loaded" << std::endl;
-    assert(train.load_labels("../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte"));
-    std::cout << "train labels loaded" << std::endl;
+    data::MNISTDataset train("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte", 
+                             "../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte");
 
     //dataloader::MNISTDataset::print_img(train.get(0).first);
 
-    std::vector<Tensor<float>> y;
-    for (uint8_t label : train.labels) {
-        y.emplace_back(Tensor<float>::zeros({10}));
-        y.back()[label] = 1.0f;
-    }
+    // std::vector<Tensor<float>> y;
+    // for (uint8_t label : train.labels) {
+    //     y.emplace_back(Tensor<float>::zeros({10}));
+    //     y.back()[label] = 1.0f;
+    // }
 
-    dataloader::DataLoader<float> dl(train.images, y, 256);
+    data::DataLoader dl(std::move(train), 256);
 
-    dataloader::MNISTDataset test;
-    assert(test.load_images("../datasets/mnist/t10k-images-idx3-ubyte/t10k-images-idx3-ubyte"));
-    assert(test.load_labels("../datasets/mnist/t10k-labels-idx1-ubyte/t10k-labels-idx1-ubyte"));
+    data::MNISTDataset test("../datasets/mnist/t10k-images-idx3-ubyte/t10k-images-idx3-ubyte",
+                            "../datasets/mnist/t10k-labels-idx1-ubyte/t10k-labels-idx1-ubyte");
 
-    Tensor<float> xTest(Shape({test.images.size(), 784}));
-    Tensor<size_t> yTest(Shape({test.images.size()}));
+    // Tensor<float> xTest(Shape({test.images.size(), 784}));
+    // Tensor<size_t> yTest(Shape({test.images.size()}));
 
-    for (size_t i = 0; i < test.images.size(); i++) {
-        xTest[i] = test.images[i];
-        yTest[i] = test.labels[i];
-    }
+    // for (size_t i = 0; i < test.images.size(); i++) {
+    //     xTest[i] = test.images[i];
+    //     yTest[i] = test.labels[i];
+    // }
 
     module::MLP<float> model({784, 128, 64, 10});
     auto weights = model.weights();
@@ -87,8 +83,8 @@ int main() {
         //timing::Profiler::report(true);
         //std::cout << "Average epoch training loss: " << totalLoss / cnt << std::endl;
 
-        Tensor<size_t> yPred = model(xTest).value().argmax();
-        int correct = (yPred == yTest).astype<int>().sum();
-        std::cout << "Test accuracy: " << correct << " / " << test.images.size() << " = " << ((float)correct / test.images.size()) << std::endl;
+        Tensor<uint8_t> yPred = model(test.images).value().argmax().astype<uint8_t>();
+        int correct = (yPred == test.labels).astype<int>().sum();
+        std::cout << "Test accuracy: " << correct << " / " << test.size() << " = " << ((float)correct / test.size()) << std::endl;
     }
 }

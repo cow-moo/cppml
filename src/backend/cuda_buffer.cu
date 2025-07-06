@@ -821,20 +821,3 @@ void CudaBuffer<T>::matmul(
 #include "cuda_buffer_inst.inc"
 
 }
-
-    // size_t aBlockOffset = blockDim.x * BM * aStrides[ndim];
-    // size_t bBlockOffset = blockDim.y * BN * bStrides[ndim + 1];
-
-    // size_t aThreadOffset = tid / BK * aStrides[ndim] + tid % BK * aStrides[ndim + 1];
-    // size_t bThreadOffset = tid / BN * bStrides[ndim] + tid % BN * bStrides[ndim + 1];
-
-    // size_t aStrideOuter = BK * aStrides[ndim + 1];
-    // size_t aStrideInner = NTHREADS / BK * aStrides[ndim];
-    // static_assert(NTHREADS % BK == 0);
-
-    // size_t bStrideOuter = BK * bStrides[ndim];
-    // size_t bStrideInner = NTHREADS / BN * bStrides[ndim];
-    // static_assert(NTHREADS % BN == 0);
-
-    // size_t aIdx = aBatchOffset + aBlockOffset + aThreadOffset;
-    // size_t bIdx = bBatchOffset + bBlockOffset + bThreadOffset;

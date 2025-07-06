@@ -18,6 +18,7 @@ template void CudaBuffer<T>::apply_binary<U, V>( \
 INSTANTIATE_APPLY_BINARY(float, float, float)
 INSTANTIATE_APPLY_BINARY(unsigned long, unsigned long, unsigned long)
 INSTANTIATE_APPLY_BINARY(int, int, int)
+INSTANTIATE_APPLY_BINARY(uint8_t, uint8_t, uint8_t)
 
 INSTANTIATE_APPLY_BINARY(bool, float, float)
 INSTANTIATE_APPLY_BINARY(bool, unsigned long, unsigned long)
@@ -30,6 +31,10 @@ template void CudaBuffer<T>::apply_unary<U>( \
     UnOp);
 
 INSTANTIATE_APPLY_UNARY(float, float)
+INSTANTIATE_APPLY_UNARY(unsigned long, unsigned long)
+INSTANTIATE_APPLY_UNARY(bool, bool)
+INSTANTIATE_APPLY_UNARY(int, int)
+INSTANTIATE_APPLY_UNARY(uint8_t, uint8_t)
 
 INSTANTIATE_APPLY_UNARY(float, bool)
 INSTANTIATE_APPLY_UNARY(unsigned long, bool)
