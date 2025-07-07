@@ -355,7 +355,6 @@ Tensor<U> Tensor<U>::gather(const Tensor<size_t>& idxs) const {
         if (idxs.shape()[i] != shape()[i])
             throw std::invalid_argument("invalid shape for gather");
     }
-    assert(idxs.shape()[-1] == 1);
     Tensor<U> res(idxs.shape(), data_->backend_type());
     res.data_->gather(idxs.shape(), shape()[-1],
                       data_.get(), strides_, offset_,

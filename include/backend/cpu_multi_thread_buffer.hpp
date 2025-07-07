@@ -595,14 +595,20 @@ public:
         T* aData = static_cast<const CpuMultiThreadBuffer*>(a)->data_;
         size_t* bData = static_cast<const CpuMultiThreadBuffer<size_t>*>(b)->data_;
 
+        Shape shape(rShape);
+        shape[-1] = 1;
+
         auto rIt = cpu_utils::StridedIterator<T>(data_, rShape, Strides(rShape), 0);
-        auto aIt = cpu_utils::StridedIterator<T>(aData, rShape, aStrides, aOffset);
+        auto aIt = cpu_utils::StridedIterator<T>(aData, shape, aStrides, aOffset);
         auto bIt = cpu_utils::StridedIterator<size_t>(bData, rShape, bStrides, bOffset);
 
         for (size_t i = 0; i < rShape.numel(); ++i) {
             assert(*bIt < gatherDim);
             *rIt = aData[aIt.dataIdx + *bIt * aStrides[-1]];
-            ++rIt; ++aIt; ++bIt;
+            ++rIt; ++bIt;
+
+            if ((i + 1) % rShape[-1] == 0)
+                ++aIt;
         }
     }
 

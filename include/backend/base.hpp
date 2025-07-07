@@ -128,9 +128,9 @@ public:
                         const DeviceBuffer<size_t>* b, const Strides& bStrides, size_t bOffset) = 0;
 
     // TODO: implement scatter
-    virtual void scatter(const Shape& rShape,
-                        const DeviceBuffer<T>* a, const Strides& aStrides, size_t aOffset,
-                        const DeviceBuffer<size_t>* b, const Strides& bStrides, size_t bOffset) = 0;
+    // virtual void scatter(const Shape& rShape,
+    //                     const DeviceBuffer<T>* a, const Strides& aStrides, size_t aOffset,
+    //                     const DeviceBuffer<size_t>* b, const Strides& bStrides, size_t bOffset) = 0;
 
 protected:
     DeviceBuffer(BackendType type) : refs_(1), type_(type) {}

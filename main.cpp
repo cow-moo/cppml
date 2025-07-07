@@ -68,8 +68,7 @@ int main() {
 
     backend::BackendGuard guard(backend::BackendType::Cuda);
     Tensor<> a({{1, 2, 3}, {4, 5, 6}, {7, 8, 9}});
-    Tensor<size_t> b({0, 0, 2});
-    b.assign(b.unsqueeze(1));
+    Tensor<size_t> b({{0, 0}, {1, 0}, {0, 2}});
     b.print();
     a.gather(b).print();
 }

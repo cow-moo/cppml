@@ -829,7 +829,7 @@ __global__ void gather_kernel(
     if (tid >= numel) return;
 
     size_t rIdx = tid;
-    size_t aIdx = flat_to_data_idx(tid, ndim, shape, aStrides, aOffset);
+    size_t aIdx = flat_to_data_idx(tid / shape[ndim - 1], ndim - 1, shape, aStrides, aOffset);
     size_t bIdx = flat_to_data_idx(tid, ndim, shape, bStrides, bOffset);
 
     size_t idx = bData[bIdx];
