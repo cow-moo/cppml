@@ -204,7 +204,7 @@ Expression<T> Expression<T>::softmax() const {
 
     if (res.graph_) {
         res.graph_->tape.push_back([resGrad = *res.grad_, resValue = res.value(), grad = *grad_]() mutable {
-            Tensor<T> scratch = (resGrad * resValue).sum({-1}).unsqueeze(resGrad.shape().size() - 1);
+            Tensor<T> scratch = (resGrad * resValue).sum({-1}, true);
             grad += resValue * (resGrad - scratch);
         });
     }
@@ -218,8 +218,21 @@ Expression<T> Expression<T>::log_softmax() const {
 
     if (res.graph_) {
         res.graph_->tape.push_back([resGrad = *res.grad_, resValue = res.value(), grad = *grad_]() mutable {
-            Tensor<T> sumGrad = resGrad.sum({-1}).unsqueeze(resGrad.shape().size() - 1);
+            Tensor<T> sumGrad = resGrad.sum({-1}, true);
             grad += resGrad - resValue.exp() * sumGrad;
+        });
+    }
+
+    return res;
+}
+
+template <typename T>
+Expression<T> Expression<T>::gather(const Tensor<size_t>& idxs) const {
+    Expression res(value().gather(idxs), "gather", graph_);
+
+    if (res.graph_) {
+        res.graph_->tape.push_back([resGrad = *res.grad_, grad = *grad_, idxs = idxs] mutable {
+            grad.scatter_add_(resGrad, idxs);
         });
     }
 

@@ -434,7 +434,7 @@ public:
     }
 
     Tensor unsqueeze(int axis) const {
-        if (axis < 0) axis += shape_.size();
+        if (axis < 0) axis += shape_.size() + 1;
         if (axis < 0 || axis > (int)shape_.size()) {
             throw std::invalid_argument("Axis index out of bounds.");
         }

@@ -348,19 +348,44 @@ Tensor<U> Tensor<U>::matmul(const Tensor& other) const {
 /* ===== Misc Operations ===== */
 template <typename U>
 Tensor<U> Tensor<U>::gather(const Tensor<size_t>& idxs) const {
-    assert(data_->backend_type() == idxs.data_->backend_type());
+    assert(backend_type() == idxs.backend_type());
     if (idxs.shape().size() != shape().size())
         throw std::invalid_argument("idxs should have same number of dimensions");
     for (size_t i = 0; i < idxs.shape().size() - 1; ++i) {
         if (idxs.shape()[i] != shape()[i])
             throw std::invalid_argument("invalid shape for gather");
     }
-    Tensor<U> res(idxs.shape(), data_->backend_type());
+
+    Tensor<U> res(idxs.shape(), backend_type());
     res.data_->gather(idxs.shape(), shape()[-1],
                       data_.get(), strides_, offset_,
                       idxs.data_.get(), idxs.strides_, idxs.offset_);
     return res;
 }
+
+template <typename U>
+Tensor<U> Tensor<U>::scatter(const Tensor<size_t>& idxs, size_t scatterDim) const {
+    Shape rShape(shape());
+    rShape[-1] = scatterDim;
+    Tensor res = Tensor<>::zeros(rShape, backend_type());
+    return res.scatter_add_(*this, idxs);
+}
+
+template <typename U>
+Tensor<U>& Tensor<U>::scatter_add_(const Tensor& other, const Tensor<size_t>& idxs) {
+    assert(other.shape() == idxs.shape());
+    for (size_t i = 0; i < idxs.shape().size() - 1; ++i) {
+        if (idxs.shape()[i] != shape()[i])
+            throw std::invalid_argument("invalid shape for scatter add");
+    }
+
+    data_->scatter_add(shape(), strides_, offset_,
+                       other.data_.get(), other.strides_, other.offset_,
+                       idxs.data_.get(), idxs.strides_, idxs.offset_,
+                       idxs.shape()[-1]);
+    return *this;
+}
+
 
 /* ===== Manipulations ===== */
 
@@ -428,7 +453,7 @@ Tensor<U> Tensor<U>::reshape(const Shape& newShape) const {
 
 template <typename U>
 Tensor<U> Tensor<U>::unsqueeze(int axis) const {
-    if (axis < 0) axis += shape_.size();
+    if (axis < 0) axis += shape_.size() + 1;
     if (axis < 0 || axis > (int)shape_.size()) {
         throw std::invalid_argument("Axis index out of bounds.");
     }

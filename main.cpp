@@ -1,6 +1,6 @@
 #include <iostream>
 #include "linalg.hpp"
-//#include "autodiff.hpp"
+#include "autodiff.hpp"
 //#include "module.hpp"
 //#include "solver.hpp"
 #include "data.hpp"
@@ -67,8 +67,22 @@ int main() {
     // std::get<1>(*it).print();
 
     backend::BackendGuard guard(backend::BackendType::Cuda);
-    Tensor<> a({{1, 2, 3}, {4, 5, 6}, {7, 8, 9}});
-    Tensor<size_t> b({{0, 0}, {1, 0}, {0, 2}});
-    b.print();
-    a.gather(b).print();
+    // Tensor<> a({{1, 2, 3}, {4, 5, 6}, {7, 8, 9}});
+    // Tensor<size_t> b({{0, 0}, {1, 0}, {0, 2}});
+    // b.print();
+    // a.gather(b).print();
+
+    // Tensor<> a({{1, 2, 3}, {4, 5, 6}, {7, 8, 9}});
+    // Tensor<size_t> b({{0, 1, 3}, {1, 0, 2}, {0, 2, 2}});
+
+    // a.scatter(b, 4).print();
+
+    autodiff::ComputationGraph graph;
+    autodiff::Expression<> a(linalg::Tensor<>({{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}), &graph);
+    linalg::Tensor<size_t> b({0, 2, 0});
+    b.assign(b.unsqueeze(1));
+
+    auto x = a.gather(b).sum();
+    x.backward();
+    a.print();
 }

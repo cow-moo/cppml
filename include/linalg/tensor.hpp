@@ -141,6 +141,8 @@ public:
     /* ===== Misc Operations ===== */
     // TODO: Add axis parameter
     Tensor gather(const Tensor<size_t>& idxs) const;
+    Tensor scatter(const Tensor<size_t>& idxs, size_t scatterDim) const;
+    Tensor& scatter_add_(const Tensor& other, const Tensor<size_t>& idxs);
 
     /* ===== Manipulations ===== */
     Tensor reshape(const Shape& newShape) const;

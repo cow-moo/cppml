@@ -71,11 +71,12 @@ public:
     Expression softmax() const;
     Expression log_softmax() const;
 
-    // Expression gather(const Tensor<T>& idxs) const;
+    Expression gather(const Tensor<size_t>& idxs) const;
 
     void print() const;
 
 private:
+    // Ops (aside from assignment) should never reassign these
     std::optional<Tensor<T>> value_;
     std::optional<Tensor<T>> grad_;
     std::string name_;

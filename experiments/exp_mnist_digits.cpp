@@ -29,7 +29,8 @@ int main() {
 
     data::MNISTDataset test("../datasets/mnist/t10k-images-idx3-ubyte/t10k-images-idx3-ubyte",
                             "../datasets/mnist/t10k-labels-idx1-ubyte/t10k-labels-idx1-ubyte");
-
+    test.images.assign(test.images.to(backend::BackendType::Cuda));
+    test.labels.assign(test.labels.to(backend::BackendType::Cuda));
     // Tensor<float> xTest(Shape({test.images.size(), 784}));
     // Tensor<size_t> yTest(Shape({test.images.size()}));
 
@@ -61,7 +62,10 @@ int main() {
             }
             {
                 timing::ScopedProfiler timer("Loss");
-                loss = loss::cross_entropy_logits(logits, y);
+                //std::cout << logits.shape() << " " << y.shape() << std::endl;
+                //std::cout << y.unsqueeze(-1).shape() << std::endl;
+                loss = loss::cross_entropy_logits(logits, y.astype<size_t>());
+                //loss.print();
                 // totalLoss += loss.value();
                 // cnt++;
             }

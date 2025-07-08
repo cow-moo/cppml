@@ -62,6 +62,11 @@ public:
                 const DeviceBuffer<T>* a, const Strides& aStrides, size_t aOffset,
                 const DeviceBuffer<size_t>* b, const Strides& bStrides, size_t bOffset) override;
 
+    void scatter_add(const Shape& rShape, const Strides& rStrides, size_t rOffset,
+                     const DeviceBuffer<T>* a, const Strides& aStrides, size_t aOffset,
+                     const DeviceBuffer<size_t>* b, const Strides& bStrides, size_t bOffset,
+                     size_t scatterDim) override;
+
 private:
     size_t size_;
     T* data_;

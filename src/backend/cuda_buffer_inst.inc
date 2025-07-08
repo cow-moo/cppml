@@ -1,5 +1,5 @@
 template class CudaBuffer<float>;
-template class CudaBuffer<unsigned long>;
+template class CudaBuffer<size_t>;
 template class CudaBuffer<bool>;
 template class CudaBuffer<int>;
 template class CudaBuffer<uint8_t>;
@@ -16,13 +16,14 @@ template void CudaBuffer<T>::apply_binary<U, V>( \
     V, BinOp);
 
 INSTANTIATE_APPLY_BINARY(float, float, float)
-INSTANTIATE_APPLY_BINARY(unsigned long, unsigned long, unsigned long)
+INSTANTIATE_APPLY_BINARY(size_t, size_t, size_t)
 INSTANTIATE_APPLY_BINARY(int, int, int)
 INSTANTIATE_APPLY_BINARY(uint8_t, uint8_t, uint8_t)
 
 INSTANTIATE_APPLY_BINARY(bool, float, float)
 INSTANTIATE_APPLY_BINARY(bool, unsigned long, unsigned long)
 INSTANTIATE_APPLY_BINARY(bool, int, int)
+INSTANTIATE_APPLY_BINARY(bool, uint8_t, uint8_t)
 
 #define INSTANTIATE_APPLY_UNARY(T, U) \
 template void CudaBuffer<T>::apply_unary<U>( \
@@ -31,18 +32,21 @@ template void CudaBuffer<T>::apply_unary<U>( \
     UnOp);
 
 INSTANTIATE_APPLY_UNARY(float, float)
-INSTANTIATE_APPLY_UNARY(unsigned long, unsigned long)
+INSTANTIATE_APPLY_UNARY(size_t, size_t)
 INSTANTIATE_APPLY_UNARY(bool, bool)
 INSTANTIATE_APPLY_UNARY(int, int)
 INSTANTIATE_APPLY_UNARY(uint8_t, uint8_t)
 
 INSTANTIATE_APPLY_UNARY(float, bool)
-INSTANTIATE_APPLY_UNARY(unsigned long, bool)
+INSTANTIATE_APPLY_UNARY(size_t, bool)
 INSTANTIATE_APPLY_UNARY(int, bool)
 
-INSTANTIATE_APPLY_UNARY(float, unsigned long)
+INSTANTIATE_APPLY_UNARY(float,size_t)
 INSTANTIATE_APPLY_UNARY(float, int)
 INSTANTIATE_APPLY_UNARY(float, uint8_t)
+
+INSTANTIATE_APPLY_UNARY(size_t, uint8_t)
+INSTANTIATE_APPLY_UNARY(uint8_t, size_t)
 
 #define INSTANTIATE_ARG_REDUCE(U) \
 template void CudaBuffer<size_t>::arg_reduce<U>( \

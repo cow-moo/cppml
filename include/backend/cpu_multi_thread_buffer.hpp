@@ -612,6 +612,37 @@ public:
         }
     }
 
+    void scatter_add(const Shape& rShape, const Strides& rStrides, size_t rOffset,
+                     const DeviceBuffer<T>* a, const Strides& aStrides, size_t aOffset,
+                     const DeviceBuffer<size_t>* b, const Strides& bStrides, size_t bOffset,
+                     size_t scatterDim) override {
+        assert(a->backend_type() == BackendType::CpuMultiThread &&
+               b->backend_type() == BackendType::CpuMultiThread);
+
+        T* aData = static_cast<const CpuMultiThreadBuffer*>(a)->data_;
+        size_t* bData = static_cast<const CpuMultiThreadBuffer<size_t>*>(b)->data_;
+
+        Shape aShape(rShape);
+        aShape[-1] = scatterDim;
+
+        Shape shape(rShape);
+        shape[-1] = 1;
+
+        auto rIt = cpu_utils::StridedIterator<T>(data_, shape, rStrides, rOffset);
+        auto aIt = cpu_utils::StridedIterator<T>(aData, aShape, aStrides, aOffset);
+        auto bIt = cpu_utils::StridedIterator<size_t>(bData, aShape, bStrides, bOffset);
+
+        for (size_t i = 0; i < aShape.numel(); ++i) {
+            assert(*bIt < rShape[-1]);
+            data_[rIt.dataIdx + *bIt * rStrides[-1]] += *aIt;
+            //*rIt = aData[aIt.dataIdx + *bIt * aStrides[-1]];
+            ++aIt; ++bIt;
+
+            if ((i + 1) % scatterDim == 0)
+                ++rIt;
+        }
+    }
+
     T& operator[](size_t i) {
         return data_[i];
     }

@@ -16,9 +16,10 @@ Expression<T> cross_entropy_logits(const Expression<T>& logits, const Tensor<T>&
     return (sum(logits.log_softmax() * Expression<T>(target)) / (-(float)target.shape()[0])).rename_("cross_entropy_logits");
 }
 
+// We expect (..., C) for logits and (...) for target
 template <typename T>
 Expression<T> cross_entropy_logits(const Expression<T>& logits, const Tensor<size_t>& target) {
-    return (sum(logits.log_softmax() * Expression<T>(target)) / (-(float)target.shape()[0])).rename_("cross_entropy_logits");
+    return (sum(logits.log_softmax().gather(target.unsqueeze(-1))) / (-(float)target.shape()[0])).rename_("cross_entropy_logits");
 }
 
 }

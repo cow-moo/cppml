@@ -858,6 +858,57 @@ void CudaBuffer<T>::gather(
     );
 }
 
+template <typename T>
+__global__ void gather_kernel(
+    size_t numel, size_t ndim, const ShapeArray shape, const size_t scatterDim,
+    T* rData, const StridesArray rStrides, const size_t rOffset,
+    T* aData, const StridesArray aStrides, const size_t aOffset,
+    size_t* bData, const StridesArray bStrides, const size_t bOffset)
+{
+    size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (tid >= numel) return;
+
+    size_t rIdx = flat_to_data_idx(tid / shape[ndim - 1], ndim - 1, shape, rStrides, rOffset);;
+    size_t aIdx = flat_to_data_idx(tid, ndim, shape, aStrides, aOffset);
+    size_t bIdx = flat_to_data_idx(tid, ndim, shape, bStrides, bOffset);
+
+    size_t idx = bData[bIdx];
+    assert(idx < scatterDim);
+    rData[rIdx + idx * rStrides[ndim - 1]] += aData[aIdx];
+}
+
+template <typename T>
+void CudaBuffer<T>::scatter_add(
+    const Shape& rShape, const Strides& rStrides, size_t rOffset,
+    const DeviceBuffer<T>* a, const Strides& aStrides, size_t aOffset,
+    const DeviceBuffer<size_t>* b, const Strides& bStrides, size_t bOffset,
+    size_t scatterDim)
+{
+    assert(a->backend_type() == BackendType::Cuda &&
+           b->backend_type() == BackendType::Cuda);
+
+    T* aData = static_cast<const CudaBuffer*>(a)->data_;
+    size_t* bData = static_cast<const CudaBuffer<size_t>*>(b)->data_;
+
+    Shape aShape(rShape);
+    aShape[-1] = scatterDim;
+
+    Shape shape(rShape);
+    shape[-1] = 1;
+
+    int blocks = ceil_div(shape.numel() / scatterDim, THREADS_PER_BLOCK);
+
+    // Currently just serializes the scatterDim to avoid atomics, could be optimized
+    for (size_t i = 0; i < scatterDim; ++i) {
+        gather_kernel<T><<<blocks, THREADS_PER_BLOCK>>>(
+            shape.numel(), shape.size(), shape.array(), rShape[-1],
+            data_, rStrides.array(), rOffset,
+            aData, aStrides.array(), aOffset + i * aStrides[-1],
+            bData, bStrides.array(), bOffset + i * bStrides[-1]
+        );
+    }
+}
+
 #include "cuda_buffer_inst.inc"
 
 }
