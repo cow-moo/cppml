@@ -1,5 +1,5 @@
 #include <iostream>
-#include "dataloader.hpp"
+#include "data.hpp"
 #include "linalg.hpp"
 #include "autodiff.hpp"
 #include "module.hpp"

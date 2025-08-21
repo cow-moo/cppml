@@ -12,7 +12,7 @@ using linalg::Shape;
 using autodiff::Expression;
 
 int main() {
-    backend::BackendGuard guard(backend::BackendType::Cuda);
+    backend::BackendGuard guard(backend::BackendType::CpuSingleThread);
 
     data::MNISTDataset train("../datasets/mnist/train-images-idx3-ubyte/train-images-idx3-ubyte", 
                              "../datasets/mnist/train-labels-idx1-ubyte/train-labels-idx1-ubyte");
@@ -29,8 +29,8 @@ int main() {
 
     data::MNISTDataset test("../datasets/mnist/t10k-images-idx3-ubyte/t10k-images-idx3-ubyte",
                             "../datasets/mnist/t10k-labels-idx1-ubyte/t10k-labels-idx1-ubyte");
-    test.images.assign(test.images.to(backend::BackendType::Cuda));
-    test.labels.assign(test.labels.to(backend::BackendType::Cuda));
+    test.images.assign(test.images.to(backend::BackendType::CpuSingleThread));
+    test.labels.assign(test.labels.to(backend::BackendType::CpuSingleThread));
     // Tensor<float> xTest(Shape({test.images.size(), 784}));
     // Tensor<size_t> yTest(Shape({test.images.size()}));
 
